@@ -155,18 +155,18 @@ Unit tests are in `*_test.go` files alongside source:
 - `pathcheck_test.go` — path traversal detection, filename validation (length, control chars), local path validation, null bytes, base dir containment
 - `server_test.go` — server creation, tool registration, HTTP auth middleware
 
-E2E tests in `e2e/` use testcontainers-go with a Docker SSH server:
-- `e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, rename, sessions)
-- `e2e/setup_test.go` — Docker container + MCP server setup helpers
-- `e2e/Dockerfile` — Ubuntu SSH server image for testing
+E2E tests in `tests/e2e/` use testcontainers-go with a Docker SSH server:
+- `tests/e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, rename, sessions)
+- `tests/e2e/setup_test.go` — Docker container + MCP server setup helpers
+- `tests/e2e/Dockerfile` — Ubuntu SSH server image for testing
 
 Run tests:
 ```bash
-go test ./internal/...             # Unit tests only
-go test -v -timeout 120s ./e2e/... # E2E tests (requires Docker)
-go test ./...                      # All tests
-go test -v ./internal/...          # Verbose unit tests
-go test -race ./internal/...       # Race detector
+go test ./internal/...                   # Unit tests only
+go test -v -timeout 120s ./tests/e2e/... # E2E tests (requires Docker)
+go test ./...                            # All tests
+go test -v ./internal/...                # Verbose unit tests
+go test -race ./internal/...             # Race detector
 ```
 
 ## Dependencies
