@@ -150,3 +150,106 @@ func TestFilter_InvalidRegex(t *testing.T) {
 		t.Error("expected error for invalid regex")
 	}
 }
+
+func TestFilter_CIDR_Allowlist(t *testing.T) {
+	f, err := NewFilter([]string{"10.0.0.0/8"}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("10.1.2.3"); err != nil {
+		t.Errorf("expected 10.1.2.3 allowed within 10.0.0.0/8: %v", err)
+	}
+	if err := f.AllowHost("10.255.255.255"); err != nil {
+		t.Errorf("expected 10.255.255.255 allowed within 10.0.0.0/8: %v", err)
+	}
+	if err := f.AllowHost("192.168.1.1"); err == nil {
+		t.Error("expected 192.168.1.1 denied (not in 10.0.0.0/8)")
+	}
+}
+
+func TestFilter_CIDR_Denylist(t *testing.T) {
+	f, err := NewFilter(nil, []string{"192.168.0.0/16"}, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("192.168.1.1"); err == nil {
+		t.Error("expected 192.168.1.1 denied by 192.168.0.0/16")
+	}
+	if err := f.AllowHost("10.0.0.1"); err != nil {
+		t.Errorf("expected 10.0.0.1 allowed (not in 192.168.0.0/16): %v", err)
+	}
+}
+
+func TestFilter_CIDR_DenylistPriority(t *testing.T) {
+	f, err := NewFilter([]string{"10.0.0.0/8"}, []string{"10.0.1.0/24"}, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// 10.0.1.5 is in both allow (10.0.0.0/8) and deny (10.0.1.0/24) — deny wins.
+	if err := f.AllowHost("10.0.1.5"); err == nil {
+		t.Error("expected 10.0.1.5 denied (denylist priority)")
+	}
+	// 10.0.2.5 is in allow but not deny — allowed.
+	if err := f.AllowHost("10.0.2.5"); err != nil {
+		t.Errorf("expected 10.0.2.5 allowed: %v", err)
+	}
+}
+
+func TestFilter_CIDR_MixedWithRegex(t *testing.T) {
+	f, err := NewFilter([]string{"10.0.0.0/8", `my-server\.example\.com`}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("10.5.5.5"); err != nil {
+		t.Errorf("expected 10.5.5.5 allowed by CIDR: %v", err)
+	}
+	if err := f.AllowHost("my-server.example.com"); err != nil {
+		t.Errorf("expected my-server.example.com allowed by regex: %v", err)
+	}
+	if err := f.AllowHost("other.example.com"); err == nil {
+		t.Error("expected other.example.com denied")
+	}
+}
+
+func TestFilter_CIDR_InvalidFallsToRegex(t *testing.T) {
+	// "192.168/notcidr" is not valid CIDR, should fall through to regex.
+	// As a regex it will also fail to match.
+	f, err := NewFilter([]string{`host\.with/slash`}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("host.with/slash"); err != nil {
+		t.Errorf("expected host.with/slash allowed by regex fallback: %v", err)
+	}
+}
+
+func TestFilter_CIDR_IPv6(t *testing.T) {
+	f, err := NewFilter([]string{"fd00::/8"}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("fd00::1"); err != nil {
+		t.Errorf("expected fd00::1 allowed within fd00::/8: %v", err)
+	}
+	if err := f.AllowHost("2001:db8::1"); err == nil {
+		t.Error("expected 2001:db8::1 denied (not in fd00::/8)")
+	}
+}
+
+func TestFilter_CIDR_HostnameNotMatchedByCIDR(t *testing.T) {
+	// CIDR matchers only match IP addresses, not hostnames.
+	f, err := NewFilter([]string{"10.0.0.0/8"}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("my-hostname"); err == nil {
+		t.Error("expected hostname denied (CIDR only matches IPs)")
+	}
+}

@@ -5,7 +5,39 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
+
+// MaxFilenameLength is the maximum allowed filename length (standard filesystem limit).
+const MaxFilenameLength = 255
+
+// ValidateFilename rejects filenames that are too long, contain null bytes,
+// path separators, directory traversal, or control characters.
+func ValidateFilename(name string) error {
+	if utf8.RuneCountInString(name) > MaxFilenameLength {
+		return fmt.Errorf("filename is too long (%d characters, max %d)", utf8.RuneCountInString(name), MaxFilenameLength)
+	}
+
+	if strings.ContainsRune(name, 0) {
+		return fmt.Errorf("filename contains null bytes")
+	}
+
+	if strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("filename contains path separator")
+	}
+
+	if name == ".." || strings.Contains(name, "..") {
+		return fmt.Errorf("filename contains directory traversal")
+	}
+
+	for _, r := range name {
+		if r < 0x20 {
+			return fmt.Errorf("filename contains control character (0x%02x)", r)
+		}
+	}
+
+	return nil
+}
 
 // ValidatePath rejects paths with traversal attempts.
 func ValidatePath(p string) error {
@@ -17,6 +49,14 @@ func ValidatePath(p string) error {
 	// Check for directory traversal in the raw path before cleaning.
 	if strings.Contains(p, "..") {
 		return fmt.Errorf("path %q contains directory traversal", p)
+	}
+
+	// Validate the filename component.
+	base := path.Base(p)
+	if base != "." && base != "/" {
+		if err := ValidateFilename(base); err != nil {
+			return fmt.Errorf("invalid filename in path: %w", err)
+		}
 	}
 
 	return nil

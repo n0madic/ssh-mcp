@@ -2,14 +2,52 @@ package security
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"strings"
 )
 
+// hostMatcher is an interface for matching hosts by regex or CIDR.
+type hostMatcher interface {
+	match(host string) bool
+	String() string
+}
+
+// regexMatcher matches hosts using a compiled regex.
+type regexMatcher struct {
+	re *regexp.Regexp
+}
+
+func (m *regexMatcher) match(host string) bool {
+	return m.re.MatchString(host)
+}
+
+func (m *regexMatcher) String() string {
+	return m.re.String()
+}
+
+// cidrMatcher matches hosts by checking if their IP falls within a CIDR range.
+type cidrMatcher struct {
+	ipNet *net.IPNet
+	cidr  string
+}
+
+func (m *cidrMatcher) match(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return m.ipNet.Contains(ip)
+}
+
+func (m *cidrMatcher) String() string {
+	return m.cidr
+}
+
 // Filter provides host and command allowlist/denylist checking.
 type Filter struct {
-	hostAllowlist []*regexp.Regexp
-	hostDenylist  []*regexp.Regexp
+	hostAllowlist []hostMatcher
+	hostDenylist  []hostMatcher
 	cmdAllowlist  []*regexp.Regexp
 	cmdDenylist   []*regexp.Regexp
 }
@@ -19,10 +57,10 @@ func NewFilter(hostAllow, hostDeny, cmdAllow, cmdDeny []string) (*Filter, error)
 	f := &Filter{}
 	var err error
 
-	if f.hostAllowlist, err = compilePatterns(hostAllow); err != nil {
+	if f.hostAllowlist, err = compileHostPatterns(hostAllow); err != nil {
 		return nil, fmt.Errorf("host allowlist: %w", err)
 	}
-	if f.hostDenylist, err = compilePatterns(hostDeny); err != nil {
+	if f.hostDenylist, err = compileHostPatterns(hostDeny); err != nil {
 		return nil, fmt.Errorf("host denylist: %w", err)
 	}
 	if f.cmdAllowlist, err = compilePatterns(cmdAllow); err != nil {
@@ -40,15 +78,15 @@ func NewFilter(hostAllow, hostDeny, cmdAllow, cmdDeny []string) (*Filter, error)
 func (f *Filter) AllowHost(host string) error {
 	host = strings.ToLower(host)
 
-	for _, re := range f.hostDenylist {
-		if re.MatchString(host) {
-			return fmt.Errorf("host %q is denied by denylist pattern %q", host, re.String())
+	for _, m := range f.hostDenylist {
+		if m.match(host) {
+			return fmt.Errorf("host %q is denied by denylist pattern %q", host, m.String())
 		}
 	}
 
 	if len(f.hostAllowlist) > 0 {
-		for _, re := range f.hostAllowlist {
-			if re.MatchString(host) {
+		for _, m := range f.hostAllowlist {
+			if m.match(host) {
 				return nil
 			}
 		}
@@ -56,6 +94,28 @@ func (f *Filter) AllowHost(host string) error {
 	}
 
 	return nil
+}
+
+// compileHostPatterns compiles host patterns as either CIDR matchers or regex matchers.
+func compileHostPatterns(patterns []string) ([]hostMatcher, error) {
+	matchers := make([]hostMatcher, 0, len(patterns))
+	for _, p := range patterns {
+		// Try CIDR first: pattern must contain "/" and parse successfully.
+		if strings.Contains(p, "/") {
+			_, ipNet, err := net.ParseCIDR(p)
+			if err == nil {
+				matchers = append(matchers, &cidrMatcher{ipNet: ipNet, cidr: p})
+				continue
+			}
+		}
+		// Fall through to regex.
+		re, err := compileAnchoredRegex(p)
+		if err != nil {
+			return nil, err
+		}
+		matchers = append(matchers, &regexMatcher{re: re})
+	}
+	return matchers, nil
 }
 
 // AllowCommand checks if a command is allowed.
@@ -82,20 +142,27 @@ func (f *Filter) AllowCommand(cmd string) error {
 func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {
 	compiled := make([]*regexp.Regexp, 0, len(patterns))
 	for _, p := range patterns {
-		// Auto-anchor patterns for full-string matching to prevent
-		// partial matches (e.g. denylist "rm" matching "format").
-		anchored := p
-		if !strings.HasPrefix(anchored, "^") {
-			anchored = "^" + anchored
-		}
-		if !strings.HasSuffix(anchored, "$") {
-			anchored = anchored + "$"
-		}
-		re, err := regexp.Compile(anchored)
+		re, err := compileAnchoredRegex(p)
 		if err != nil {
-			return nil, fmt.Errorf("invalid regex pattern %q: %w", p, err)
+			return nil, err
 		}
 		compiled = append(compiled, re)
 	}
 	return compiled, nil
+}
+
+// compileAnchoredRegex compiles a regex pattern with auto-anchoring for full-string matching.
+func compileAnchoredRegex(p string) (*regexp.Regexp, error) {
+	anchored := p
+	if !strings.HasPrefix(anchored, "^") {
+		anchored = "^" + anchored
+	}
+	if !strings.HasSuffix(anchored, "$") {
+		anchored = anchored + "$"
+	}
+	re, err := regexp.Compile(anchored)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regex pattern %q: %w", p, err)
+	}
+	return re, nil
 }

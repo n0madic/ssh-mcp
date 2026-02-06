@@ -8,7 +8,7 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 - **Authentication** — SSH keys (auto-discovery), password, `~/.ssh/config` resolution
 - **Command Execution** — with sudo support, working directory, timeout, ANSI stripping
 - **SFTP File Operations** — upload/download files and directories, edit files (replace/patch), list directories, file stat/rename, `~` path expansion
-- **Security** — host/command allowlist/denylist (regex), per-host rate limiting, path traversal protection
+- **Security** — host/command allowlist/denylist (regex + CIDR), per-host rate limiting, path traversal protection, filename length validation
 - **Transports** — stdio (default) and Streamable HTTP (`localhost` only)
 - **Graceful Shutdown** — closes all SSH connections on SIGINT/SIGTERM
 
@@ -83,9 +83,14 @@ go build -o ssh-mcp .
 
 ### Examples
 
-**Allow only specific hosts (multiple flags):**
+**Allow only specific hosts (regex patterns):**
 ```bash
 ./ssh-mcp --host-allowlist "192.168.1.*" --host-allowlist "10.0.0.*"
+```
+
+**Allow hosts by CIDR range:**
+```bash
+./ssh-mcp --host-allowlist "10.0.0.0/8" --host-allowlist "192.168.0.0/16"
 ```
 
 **Block dangerous commands (multiple flags):**
@@ -93,7 +98,7 @@ go build -o ssh-mcp .
 ./ssh-mcp --command-denylist "rm\s+-rf.*" --command-denylist "shutdown.*" --command-denylist "reboot.*"
 ```
 
-> **Note:** Command/host filter patterns are auto-anchored with `^` and `$` for full-string matching. Use `.*` for substring matching (e.g., `rm\s+-rf.*` matches `rm -rf /` but `rm` alone won't match `format`).
+> **Note:** Command/host filter patterns are auto-anchored with `^` and `$` for full-string matching. Use `.*` for substring matching (e.g., `rm\s+-rf.*` matches `rm -rf /` but `rm` alone won't match `format`). Host patterns also support CIDR notation (e.g., `10.0.0.0/8`) — CIDR patterns are detected automatically and match by IP range instead of regex.
 
 **Using environment variables (comma-separated):**
 ```bash
@@ -366,10 +371,11 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 - **HTTP authentication** — optional bearer token authentication for HTTP transport (`--http-token`)
 - **Host key verification** — enabled by default using `~/.ssh/known_hosts`; fails with a clear error if the file is missing (no silent downgrade to insecure mode)
 - **Sudo disabled by default** — must be explicitly enabled with `--enable-sudo`
-- **Host filtering** — allowlist/denylist with regex support; denylist takes priority; patterns are auto-anchored for full-string matching
+- **Host filtering** — allowlist/denylist with regex and CIDR support; denylist takes priority; regex patterns are auto-anchored for full-string matching; CIDR patterns (e.g., `10.0.0.0/8`) match by IP range
 - **Command filtering** — allowlist/denylist with regex support; denylist takes priority; patterns are auto-anchored; filter runs on the final command (after cd/sudo prepend)
 - **Local path restriction** — `--local-base-dir` restricts all local file operations (upload/download) to a specific directory
 - **Path traversal protection** — rejects paths containing `..` or null bytes (both local and remote)
+- **Filename validation** — rejects filenames longer than 255 characters, containing control characters, or path separators
 - **Rate limiting** — per-host token bucket rate limiter with automatic stale entry cleanup; optionally applies to SFTP file operations (`--rate-limit-file-ops`)
 - **Connection pool limits** — `--max-connections` caps the number of concurrent SSH connections
 - **File size limits** — `--max-file-size` caps remote file read operations to prevent memory exhaustion
@@ -382,7 +388,13 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 # Build
 go build ./...
 
-# Run tests
+# Run unit tests
+go test ./internal/...
+
+# Run E2E tests (requires Docker)
+go test -v -timeout 120s ./e2e/...
+
+# Run all tests
 go test ./...
 
 # Vet

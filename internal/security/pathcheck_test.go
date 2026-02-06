@@ -125,3 +125,81 @@ func TestValidateLocalPath_NoBaseDir(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateFilename_Valid(t *testing.T) {
+	tests := []string{
+		"file.txt",
+		"my-file_v2.tar.gz",
+		"a",
+		strings.Repeat("x", MaxFilenameLength), // exactly 255 chars
+		"日本語ファイル.txt",
+	}
+
+	for _, name := range tests {
+		if err := ValidateFilename(name); err != nil {
+			t.Errorf("expected %q to be valid, got: %v", name, err)
+		}
+	}
+}
+
+func TestValidateFilename_TooLong(t *testing.T) {
+	name := strings.Repeat("a", MaxFilenameLength+1)
+	if err := ValidateFilename(name); err == nil {
+		t.Error("expected error for filename exceeding max length")
+	}
+}
+
+func TestValidateFilename_NullByte(t *testing.T) {
+	if err := ValidateFilename("file\x00.txt"); err == nil {
+		t.Error("expected error for filename with null byte")
+	}
+}
+
+func TestValidateFilename_PathSeparator(t *testing.T) {
+	tests := []string{
+		"dir/file.txt",
+		"dir\\file.txt",
+	}
+
+	for _, name := range tests {
+		if err := ValidateFilename(name); err == nil {
+			t.Errorf("expected error for filename with path separator: %q", name)
+		}
+	}
+}
+
+func TestValidateFilename_ControlCharacters(t *testing.T) {
+	tests := []string{
+		"file\x01.txt",
+		"file\x0a.txt", // newline
+		"file\x1f.txt",
+		"\ttabfile.txt",
+	}
+
+	for _, name := range tests {
+		if err := ValidateFilename(name); err == nil {
+			t.Errorf("expected error for filename with control character: %q", name)
+		}
+	}
+}
+
+func TestValidateFilename_DirectoryTraversal(t *testing.T) {
+	if err := ValidateFilename(".."); err == nil {
+		t.Error("expected error for '..' filename")
+	}
+}
+
+func TestValidatePath_LongFilename(t *testing.T) {
+	longName := strings.Repeat("x", MaxFilenameLength+1)
+	p := "/home/user/" + longName
+	if err := ValidatePath(p); err == nil {
+		t.Error("expected ValidatePath to reject path with too-long filename")
+	}
+}
+
+func TestValidatePath_ControlCharInFilename(t *testing.T) {
+	p := "/home/user/file\x01.txt"
+	if err := ValidatePath(p); err == nil {
+		t.Error("expected ValidatePath to reject path with control char in filename")
+	}
+}

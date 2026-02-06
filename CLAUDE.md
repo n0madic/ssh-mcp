@@ -30,6 +30,8 @@ SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
 - **Local path restriction** — `--local-base-dir` restricts upload/download local paths
 - **No credential persistence** — passwords are not stored in the connection pool; only `ssh.ClientConfig` is retained for auto-reconnect
 - **Auto-anchored filters** — regex patterns are auto-anchored with `^`/`$` for full-string matching
+- **CIDR host filtering** — host patterns support CIDR notation (e.g., `10.0.0.0/8`) alongside regex; auto-detected
+- **Filename validation** — `ValidateFilename()` rejects names >255 chars, control characters, path separators
 - **Sudo disabled by default** — requires `--enable-sudo`
 - **File permissions preserved** — rwx bits are read from source and applied to destination
 - **Remote path expansion** — `~` and relative paths expanded via `sftp.RealPath()` server-side
@@ -40,7 +42,7 @@ SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
 
 - `internal/config` — CLI flag/env parsing via `go-arg`, config structs, validation
 - `internal/connection` — SSH auth discovery, connection pool with auto-reconnect
-- `internal/security` — host/command filter (regex, auto-anchored), rate limiter (token bucket, with cleanup), path traversal check, local path validation
+- `internal/security` — host/command filter (regex + CIDR, auto-anchored), rate limiter (token bucket, with cleanup), path traversal check, filename validation, local path validation
 - `internal/sshclient` — SFTP operations wrapper (upload/download/list/stat/rename/walk)
 - `internal/tools` — input/output types and handlers for all 12 MCP tools
 - `internal/server` — MCP server setup, tool registration with annotations, transports
@@ -148,18 +150,23 @@ Unit tests are in `*_test.go` files alongside source:
 - `config_test.go` — config building, validation, defaults, CLI parsing, new security flags
 - `auth_test.go` — host parsing, auth method discovery, missing known_hosts error
 - `pool_test.go` — pool operations, session management
-- `filter_test.go` — host/command allow/deny with regex, auto-anchoring, partial match prevention
+- `filter_test.go` — host/command allow/deny with regex, CIDR matching, auto-anchoring, partial match prevention
 - `ratelimit_test.go` — per-host rate limiting, burst, cleanup
-- `pathcheck_test.go` — path traversal detection, local path validation, null bytes, base dir containment
+- `pathcheck_test.go` — path traversal detection, filename validation (length, control chars), local path validation, null bytes, base dir containment
 - `server_test.go` — server creation, tool registration, HTTP auth middleware
 
-Integration tests require a real SSH server and are not included in the unit test suite.
+E2E tests in `e2e/` use testcontainers-go with a Docker SSH server:
+- `e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, rename, sessions)
+- `e2e/setup_test.go` — Docker container + MCP server setup helpers
+- `e2e/Dockerfile` — Ubuntu SSH server image for testing
 
 Run tests:
 ```bash
-go test ./...              # All tests
-go test -v ./internal/...  # Verbose
-go test -race ./...        # Race detector
+go test ./internal/...             # Unit tests only
+go test -v -timeout 120s ./e2e/... # E2E tests (requires Docker)
+go test ./...                      # All tests
+go test -v ./internal/...          # Verbose unit tests
+go test -race ./internal/...       # Race detector
 ```
 
 ## Dependencies
@@ -171,6 +178,7 @@ go test -race ./...        # Race detector
 - `github.com/acarl005/stripansi` — ANSI escape code stripping
 - `golang.org/x/time/rate` — rate limiting
 - `github.com/alexflint/go-arg` v1.6.1 — CLI argument parsing
+- `github.com/testcontainers/testcontainers-go` v0.40.0 — E2E test infrastructure (test only)
 
 ## Common Tasks
 
@@ -247,7 +255,9 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 
 - Path traversal protection checks for `..` and null bytes in raw paths **before** cleaning
 - Local path validation via `ValidateLocalPath()` enforces `--local-base-dir` containment
-- Host/command filters use denylist-first priority with auto-anchored regex patterns (`^`/`$`)
+- Host/command filters use denylist-first priority with auto-anchored regex patterns (`^`/`$`) and optional CIDR matching
+- `ValidateFilename()` rejects filenames >255 chars, control characters (0x00-0x1F), path separators, and `..`
+- `ValidatePath()` calls `ValidateFilename()` on the base name, so all callers get filename validation automatically
 - Command filter runs on the **final** command (after cd/sudo prepend), not just the raw input
 - Rate limiter uses per-host token buckets with periodic cleanup of stale entries
 - File ops rate limiting is opt-in via `--rate-limit-file-ops`
