@@ -2,6 +2,7 @@ package security
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -89,8 +90,39 @@ func ValidateLocalPath(localPath, baseDir string) error {
 	}
 
 	// Ensure the path is within the base directory.
-	if !strings.HasPrefix(absPath, absBase+string(filepath.Separator)) && absPath != absBase {
-		return fmt.Errorf("path %q is outside allowed base directory %q", localPath, baseDir)
+	// We must resolve symlinks to prevent traversal attacks (e.g. ln -s / /tmp/jail/root).
+	// If the path doesn't exist yet (upload scenario), validate the parent directory.
+	finalPath := absPath
+	if _, err := os.Lstat(absPath); err == nil {
+		// Path exists, resolve symlinks
+		finalPath, err = filepath.EvalSymlinks(absPath)
+		if err != nil {
+			return fmt.Errorf("failed to resolve symlinks for %q: %w", localPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("failed to check path %q: %w", localPath, err)
+	} else {
+		// Path doesn't exist - validate parent instead
+		parent := filepath.Dir(absPath)
+		if parent != "." && parent != string(filepath.Separator) {
+			resolvedParent, err := filepath.EvalSymlinks(parent)
+			if err != nil {
+				return fmt.Errorf("failed to resolve symlinks for parent of %q: %w", localPath, err)
+			}
+			finalPath = filepath.Join(resolvedParent, filepath.Base(absPath))
+		}
+	}
+
+	if !strings.HasPrefix(finalPath, absBase+string(filepath.Separator)) && finalPath != absBase {
+		// Fallback: in some cases (like macOS /var -> /private/var), the base dir might also be a symlink.
+		// Let's resolve the base dir too.
+		finalBase, err := filepath.EvalSymlinks(absBase)
+		if err != nil {
+			return fmt.Errorf("failed to resolve symlinks for base %q: %w", baseDir, err)
+		}
+		if !strings.HasPrefix(finalPath, finalBase+string(filepath.Separator)) && finalPath != finalBase {
+			return fmt.Errorf("path %q (resolves to %q) is outside allowed base directory %q (resolves to %q)", localPath, finalPath, baseDir, finalBase)
+		}
 	}
 
 	return nil

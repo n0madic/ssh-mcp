@@ -37,7 +37,7 @@ type SSHExecuteInput struct {
 	Command      string `json:"command" jsonschema:"Command to execute"`
 	Timeout      int    `json:"timeout,omitempty" jsonschema:"Command timeout in seconds (default from config)"`
 	Sudo         bool   `json:"sudo,omitempty" jsonschema:"Execute with sudo"`
-	SudoPassword string `json:"sudo_password,omitempty" jsonschema:"Password for sudo"`
+	SudoPassword string `json:"sudo_password,omitempty" jsonschema:"Password for sudo (command is executed via 'sudo -S sh -c ...')"`
 	WorkingDir   string `json:"working_dir,omitempty" jsonschema:"Working directory for command execution"`
 }
 

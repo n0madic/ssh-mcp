@@ -128,22 +128,67 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 		}
 	}
 
-	// Enforce max connections limit.
-	if p.cfg.MaxConnections > 0 {
-		p.mu.RLock()
-		count := len(p.conns)
-		p.mu.RUnlock()
-		if count >= p.cfg.MaxConnections {
-			return "", fmt.Errorf("connection pool is full (max %d connections)", p.cfg.MaxConnections)
-		}
-	}
-
 	clientConfig, err := p.auth.BuildClientConfig(params)
 	if err != nil {
 		return "", fmt.Errorf("auth config: %w", err)
 	}
 
 	addr := fmt.Sprintf("%s:%d", params.Host, params.Port)
+
+	// Acquire write lock to create connection.
+	p.mu.Lock()
+
+	// Enforce max connections limit (must be checked while holding lock).
+	if p.cfg.MaxConnections > 0 {
+		count := len(p.conns)
+		if count >= p.cfg.MaxConnections {
+			p.mu.Unlock()
+			return "", fmt.Errorf("connection pool is full (max %d connections)", p.cfg.MaxConnections)
+		}
+	}
+	// Double-check: did someone else connect while we were preparing?
+	if existing, exists := p.conns[id]; exists {
+		p.mu.Unlock() // Unlock before checking liveliness to avoid holding lock during network ops (if any)
+
+		existing.mu.RLock()
+		alive := existing.Connected && p.isAlive(existing.Client)
+		existing.mu.RUnlock()
+
+		if alive {
+			existing.mu.Lock()
+			existing.LastUsed = time.Now()
+			existing.mu.Unlock()
+			return id, nil
+		}
+
+		// It's dead, we need to replace it. Re-acquire lock to delete/overwrite.
+		p.mu.Lock()
+		// Re-check existence again mostly for safety, though unlikely to change state from dead to alive spontaneously without us.
+		if existing2, exists2 := p.conns[id]; exists2 && existing2 == existing {
+			delete(p.conns, id)
+			if existing.Client != nil {
+				existing.Client.Close()
+			}
+		}
+	}
+	// We hold the lock here.
+
+	// We have to dial *without* the lock held to avoid blocking the whole pool,
+	// but that opens the race window again.
+	// The standard pattern for a connection pool is:
+	// 1. Lock
+	// 2. Check if exists
+	// 3. If not, create a "placeholder" or reservation
+	// 4. Unlock
+	// 5. Dial
+	// 6. Lock
+	// 7. Store connection
+	// 8. Unlock
+	//
+	// However, for simplicity in this existing codebase, we'll dial first (optimistically)
+	// and then check again on insert. If we lose the race, we close our new connection and use the winner.
+	p.mu.Unlock()
+
 	client, err := ssh.Dial("tcp", addr, clientConfig)
 	if err != nil {
 		return "", fmt.Errorf("SSH dial %s: %w", addr, err)
@@ -164,9 +209,30 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 	}
 
 	p.mu.Lock()
-	p.conns[id] = conn
-	p.mu.Unlock()
+	defer p.mu.Unlock()
 
+	// Final check before inserting.
+	if existing, exists := p.conns[id]; exists {
+		// Someone beat us to it.
+		existing.mu.RLock()
+		alive := existing.Connected && p.isAlive(existing.Client)
+		existing.mu.RUnlock()
+
+		if alive {
+			// The existing one is good. Close ours and return existing.
+			client.Close()
+			existing.mu.Lock()
+			existing.LastUsed = time.Now()
+			existing.mu.Unlock()
+			return id, nil
+		}
+		// Existing is dead, overwrite it.
+		if existing.Client != nil {
+			existing.Client.Close()
+		}
+	}
+
+	p.conns[id] = conn
 	return id, nil
 }
 

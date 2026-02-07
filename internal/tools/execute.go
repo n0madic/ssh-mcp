@@ -42,6 +42,12 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 	// Build the command.
 	cmd := input.Command
 
+	// Command filter check on the original command (before cd/sudo prepend).
+	// This ensures the allowlist matches what the user actually requested.
+	if err := deps.Filter.AllowCommand(cmd); err != nil {
+		return nil, err
+	}
+
 	// Prepend working directory if specified.
 	if input.WorkingDir != "" {
 		cmd = fmt.Sprintf("cd %s && %s", shellQuote(input.WorkingDir), cmd)
@@ -52,12 +58,8 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 		if !deps.Config.AllowSudo {
 			return nil, fmt.Errorf("sudo is disabled; start server with --enable-sudo to allow")
 		}
-		cmd = fmt.Sprintf("sudo -S %s", cmd)
-	}
-
-	// Command filter check on the final command (after cd/sudo prepend).
-	if err := deps.Filter.AllowCommand(cmd); err != nil {
-		return nil, err
+		// Use sh -c to support shell builtins (like cd) inside sudo.
+		cmd = fmt.Sprintf("sudo -S sh -c %s", shellQuote(cmd))
 	}
 
 	// Set timeout.
