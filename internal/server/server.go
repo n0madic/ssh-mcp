@@ -193,6 +193,10 @@ func (s *Server) registerTools() {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
 			Name:        "ssh_list_sessions",
 			Description: "List all active SSH sessions with their connection details and statistics.",
+			InputSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			},
 			Annotations: &mcp.ToolAnnotations{
 				Title:           "SSH List Sessions",
 				ReadOnlyHint:    true,
