@@ -41,6 +41,8 @@ type Connection struct {
 	Connected    bool
 	clientConfig *ssh.ClientConfig // stored for auto-reconnect (no raw password)
 	addr         string            // stored for auto-reconnect
+	ready        chan struct{}      // closed when connection attempt completes
+	connectErr   error             // non-nil if the connection attempt failed
 }
 
 // Pool manages a thread-safe pool of SSH connections.
@@ -81,6 +83,12 @@ func (p *Pool) cleanupIdle() {
 	p.mu.RLock()
 	var toDisconnect []SessionID
 	for id, conn := range p.conns {
+		// Skip pending connections (not yet ready).
+		select {
+		case <-conn.ready:
+		default:
+			continue
+		}
 		conn.mu.RLock()
 		if conn.Connected && time.Since(conn.LastUsed) > p.cfg.MaxIdleTime {
 			toDisconnect = append(toDisconnect, id)
@@ -101,30 +109,51 @@ func MakeSessionID(user, host string, port int) SessionID {
 }
 
 // Connect establishes or reuses an SSH connection.
+// It uses a reservation pattern: a pending entry is stored in the pool before
+// dialing, so that concurrent GetConnection calls can wait for the connection
+// to become ready instead of returning "session not found".
 func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, error) {
 	id := MakeSessionID(params.User, params.Host, params.Port)
 
-	// Check for existing alive connection.
+	// Check for existing connection (alive, dead, or pending).
 	p.mu.RLock()
 	existing, exists := p.conns[id]
 	p.mu.RUnlock()
 
 	if exists {
-		existing.mu.RLock()
-		alive := existing.Connected && p.isAlive(existing.Client)
-		existing.mu.RUnlock()
-		if alive {
-			existing.mu.Lock()
-			existing.LastUsed = time.Now()
-			existing.mu.Unlock()
-			return id, nil
+		// Wait for any pending connection attempt to complete first.
+		select {
+		case <-existing.ready:
+		case <-ctx.Done():
+			return "", ctx.Err()
 		}
-		// Dead connection, remove and reconnect.
-		p.mu.Lock()
-		delete(p.conns, id)
-		p.mu.Unlock()
-		if existing.Client != nil {
-			existing.Client.Close()
+
+		if existing.connectErr != nil {
+			// Previous attempt failed; remove and retry below.
+			p.mu.Lock()
+			if cur, ok := p.conns[id]; ok && cur == existing {
+				delete(p.conns, id)
+			}
+			p.mu.Unlock()
+		} else {
+			existing.mu.RLock()
+			alive := existing.Connected && p.isAlive(existing.Client)
+			existing.mu.RUnlock()
+			if alive {
+				existing.mu.Lock()
+				existing.LastUsed = time.Now()
+				existing.mu.Unlock()
+				return id, nil
+			}
+			// Dead connection, remove and reconnect.
+			p.mu.Lock()
+			if cur, ok := p.conns[id]; ok && cur == existing {
+				delete(p.conns, id)
+			}
+			p.mu.Unlock()
+			if existing.Client != nil {
+				existing.Client.Close()
+			}
 		}
 	}
 
@@ -135,108 +164,99 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 
 	addr := fmt.Sprintf("%s:%d", params.Host, params.Port)
 
-	// Acquire write lock to create connection.
+	// Create a pending connection reservation before dialing.
+	pending := &Connection{
+		ID:    id,
+		Host:  params.Host,
+		Port:  params.Port,
+		User:  params.User,
+		ready: make(chan struct{}),
+	}
+
 	p.mu.Lock()
 
-	// Enforce max connections limit (must be checked while holding lock).
-	if p.cfg.MaxConnections > 0 {
-		count := len(p.conns)
-		if count >= p.cfg.MaxConnections {
+	// Enforce max connections limit.
+	if p.cfg.MaxConnections > 0 && len(p.conns) >= p.cfg.MaxConnections {
+		// Don't count entries that are ours to replace.
+		if _, replacing := p.conns[id]; !replacing {
 			p.mu.Unlock()
+			close(pending.ready) // signal so no one waits forever
 			return "", fmt.Errorf("connection pool is full (max %d connections)", p.cfg.MaxConnections)
 		}
 	}
-	// Double-check: did someone else connect while we were preparing?
+
+	// Check if another goroutine placed a reservation while we were building config.
 	if existing, exists := p.conns[id]; exists {
-		p.mu.Unlock() // Unlock before checking liveliness to avoid holding lock during network ops (if any)
+		p.mu.Unlock()
 
-		existing.mu.RLock()
-		alive := existing.Connected && p.isAlive(existing.Client)
-		existing.mu.RUnlock()
-
-		if alive {
-			existing.mu.Lock()
-			existing.LastUsed = time.Now()
-			existing.mu.Unlock()
-			return id, nil
+		// Wait for the other attempt to finish.
+		select {
+		case <-existing.ready:
+		case <-ctx.Done():
+			return "", ctx.Err()
 		}
 
-		// It's dead, we need to replace it. Re-acquire lock to delete/overwrite.
+		if existing.connectErr == nil {
+			existing.mu.RLock()
+			alive := existing.Connected && p.isAlive(existing.Client)
+			existing.mu.RUnlock()
+			if alive {
+				existing.mu.Lock()
+				existing.LastUsed = time.Now()
+				existing.mu.Unlock()
+				return id, nil
+			}
+		}
+
+		// Failed or dead — remove and re-acquire lock to place our reservation.
 		p.mu.Lock()
-		// Re-check existence again mostly for safety, though unlikely to change state from dead to alive spontaneously without us.
-		if existing2, exists2 := p.conns[id]; exists2 && existing2 == existing {
+		if cur, ok := p.conns[id]; ok && cur == existing {
 			delete(p.conns, id)
 			if existing.Client != nil {
 				existing.Client.Close()
 			}
+		} else if cur, ok := p.conns[id]; ok && cur != pending {
+			// Yet another goroutine beat us; give up and let caller retry.
+			p.mu.Unlock()
+			close(pending.ready)
+			return "", fmt.Errorf("concurrent connection attempt for %s, please retry", id)
 		}
 	}
-	// We hold the lock here.
 
-	// We have to dial *without* the lock held to avoid blocking the whole pool,
-	// but that opens the race window again.
-	// The standard pattern for a connection pool is:
-	// 1. Lock
-	// 2. Check if exists
-	// 3. If not, create a "placeholder" or reservation
-	// 4. Unlock
-	// 5. Dial
-	// 6. Lock
-	// 7. Store connection
-	// 8. Unlock
-	//
-	// However, for simplicity in this existing codebase, we'll dial first (optimistically)
-	// and then check again on insert. If we lose the race, we close our new connection and use the winner.
+	// Place our pending reservation in the pool.
+	p.conns[id] = pending
 	p.mu.Unlock()
 
+	// Dial without holding the pool lock.
 	client, err := ssh.Dial("tcp", addr, clientConfig)
 	if err != nil {
-		return "", fmt.Errorf("SSH dial %s: %w", addr, err)
+		pending.connectErr = fmt.Errorf("SSH dial %s: %w", addr, err)
+		// Remove the failed reservation from the pool.
+		p.mu.Lock()
+		if cur, ok := p.conns[id]; ok && cur == pending {
+			delete(p.conns, id)
+		}
+		p.mu.Unlock()
+		close(pending.ready)
+		return "", pending.connectErr
 	}
 
 	now := time.Now()
-	conn := &Connection{
-		ID:           id,
-		Client:       client,
-		Host:         params.Host,
-		Port:         params.Port,
-		User:         params.User,
-		ConnectedAt:  now,
-		LastUsed:     now,
-		Connected:    true,
-		clientConfig: clientConfig,
-		addr:         addr,
-	}
+	pending.mu.Lock()
+	pending.Client = client
+	pending.Connected = true
+	pending.ConnectedAt = now
+	pending.LastUsed = now
+	pending.clientConfig = clientConfig
+	pending.addr = addr
+	pending.mu.Unlock()
 
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	// Final check before inserting.
-	if existing, exists := p.conns[id]; exists {
-		// Someone beat us to it.
-		existing.mu.RLock()
-		alive := existing.Connected && p.isAlive(existing.Client)
-		existing.mu.RUnlock()
-
-		if alive {
-			// The existing one is good. Close ours and return existing.
-			client.Close()
-			existing.mu.Lock()
-			existing.LastUsed = time.Now()
-			existing.mu.Unlock()
-			return id, nil
-		}
-		// Existing is dead, overwrite it.
-		if existing.Client != nil {
-			existing.Client.Close()
-		}
-	}
-
-	p.conns[id] = conn
+	close(pending.ready)
 	return id, nil
 }
 
 // GetConnection retrieves a connection by ID, attempting auto-reconnect if dead.
+// If a connection attempt is in progress, it waits for it to complete.
 func (p *Pool) GetConnection(ctx context.Context, id SessionID) (*Connection, error) {
 	p.mu.RLock()
 	conn, exists := p.conns[id]
@@ -244,6 +264,17 @@ func (p *Pool) GetConnection(ctx context.Context, id SessionID) (*Connection, er
 
 	if !exists {
 		return nil, fmt.Errorf("session %s not found", id)
+	}
+
+	// Wait for pending connection to complete.
+	select {
+	case <-conn.ready:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	if conn.connectErr != nil {
+		return nil, fmt.Errorf("session %s connection failed: %w", id, conn.connectErr)
 	}
 
 	conn.mu.RLock()
@@ -290,6 +321,7 @@ func (p *Pool) GetConnection(ctx context.Context, id SessionID) (*Connection, er
 }
 
 // Disconnect closes and removes a connection.
+// If a connection attempt is still pending, it waits for it to complete first.
 func (p *Pool) Disconnect(id SessionID) error {
 	p.mu.Lock()
 	conn, exists := p.conns[id]
@@ -299,6 +331,9 @@ func (p *Pool) Disconnect(id SessionID) error {
 	}
 	delete(p.conns, id)
 	p.mu.Unlock()
+
+	// Wait for pending connection to complete before closing.
+	<-conn.ready
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -311,24 +346,39 @@ func (p *Pool) Disconnect(id SessionID) error {
 }
 
 // ListConnections returns info about all connections.
+// Pending connections (still being established) are included with Connected=false.
 func (p *Pool) ListConnections() []ConnectionInfo {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
 	infos := make([]ConnectionInfo, 0, len(p.conns))
 	for _, conn := range p.conns {
-		conn.mu.RLock()
-		infos = append(infos, ConnectionInfo{
-			SessionID:    conn.ID,
-			Host:         conn.Host,
-			Port:         conn.Port,
-			User:         conn.User,
-			ConnectedAt:  conn.ConnectedAt,
-			LastUsed:     conn.LastUsed,
-			CommandCount: conn.CommandCount,
-			Connected:    conn.Connected,
-		})
-		conn.mu.RUnlock()
+		// Check if connection is still pending.
+		select {
+		case <-conn.ready:
+			// Ready — read actual state.
+			conn.mu.RLock()
+			infos = append(infos, ConnectionInfo{
+				SessionID:    conn.ID,
+				Host:         conn.Host,
+				Port:         conn.Port,
+				User:         conn.User,
+				ConnectedAt:  conn.ConnectedAt,
+				LastUsed:     conn.LastUsed,
+				CommandCount: conn.CommandCount,
+				Connected:    conn.Connected,
+			})
+			conn.mu.RUnlock()
+		default:
+			// Still pending — report as connecting.
+			infos = append(infos, ConnectionInfo{
+				SessionID: conn.ID,
+				Host:      conn.Host,
+				Port:      conn.Port,
+				User:      conn.User,
+				Connected: false,
+			})
+		}
 	}
 	return infos
 }
@@ -339,6 +389,8 @@ func (p *Pool) CloseAll() {
 	defer p.mu.Unlock()
 
 	for id, conn := range p.conns {
+		// Wait for pending connections before closing.
+		<-conn.ready
 		conn.mu.Lock()
 		conn.Connected = false
 		if conn.Client != nil {
