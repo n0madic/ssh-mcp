@@ -260,7 +260,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 - Host/command filters use denylist-first priority with auto-anchored regex patterns (`^`/`$`) and optional CIDR matching
 - `ValidateFilename()` rejects filenames >255 chars, control characters (0x00-0x1F), path separators, and `..`
 - `ValidatePath()` calls `ValidateFilename()` on the base name, so all callers get filename validation automatically
-- Command filter runs on the **final** command (after cd/sudo prepend), not just the raw input
+- Command filter runs on the **original** command (before cd/sudo prepend), matching the user's intent rather than internal wrappers
 - Rate limiter uses per-host token buckets with periodic cleanup of stale entries
 - File ops rate limiting is opt-in via `--rate-limit-file-ops`
 - Sudo disabled by default, requires explicit flag

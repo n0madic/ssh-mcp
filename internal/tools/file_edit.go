@@ -52,7 +52,7 @@ func HandleEditFile(ctx context.Context, deps *FileEditDeps, input SSHEditFileIn
 
 	switch mode {
 	case "replace":
-		return editReplace(sc, input, doBackup)
+		return editReplace(sc, input, doBackup, deps.MaxFileSize)
 	case "patch":
 		return editPatch(sc, deps, input, doBackup)
 	default:
@@ -60,9 +60,9 @@ func HandleEditFile(ctx context.Context, deps *FileEditDeps, input SSHEditFileIn
 	}
 }
 
-func editReplace(sc *sftp.Client, input SSHEditFileInput, doBackup bool) (*SSHEditFileOutput, error) {
+func editReplace(sc *sftp.Client, input SSHEditFileInput, doBackup bool, maxFileSize int64) (*SSHEditFileOutput, error) {
 	if doBackup {
-		if err := createBackup(sc, input.RemotePath); err != nil {
+		if err := createBackup(sc, input.RemotePath, maxFileSize); err != nil {
 			return nil, fmt.Errorf("create backup: %w", err)
 		}
 	}
@@ -99,7 +99,7 @@ func editPatch(sc *sftp.Client, deps *FileEditDeps, input SSHEditFileInput, doBa
 	newContent := strings.Replace(content, input.OldString, input.NewString, 1)
 
 	if doBackup {
-		if err := createBackup(sc, input.RemotePath); err != nil {
+		if err := createBackup(sc, input.RemotePath, deps.MaxFileSize); err != nil {
 			return nil, fmt.Errorf("create backup: %w", err)
 		}
 	}
@@ -117,8 +117,8 @@ func editPatch(sc *sftp.Client, deps *FileEditDeps, input SSHEditFileInput, doBa
 	}, nil
 }
 
-func createBackup(sc *sftp.Client, remotePath string) error {
-	data, err := sshclient.ReadFile(sc, remotePath)
+func createBackup(sc *sftp.Client, remotePath string, maxFileSize int64) error {
+	data, err := sshclient.ReadFile(sc, remotePath, maxFileSize)
 	if err != nil {
 		// File doesn't exist yet, no backup needed.
 		return nil

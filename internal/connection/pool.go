@@ -342,8 +342,12 @@ func (p *Pool) Disconnect(id SessionID) error {
 	delete(p.conns, id)
 	p.mu.Unlock()
 
-	// Wait for pending connection to complete before closing.
-	<-conn.ready
+	// Wait for pending connection to complete before closing (with timeout).
+	select {
+	case <-conn.ready:
+	case <-time.After(10 * time.Second):
+		log.Printf("Timeout waiting for pending connection %s during disconnect", id)
+	}
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -399,18 +403,25 @@ func (p *Pool) ListConnections() []ConnectionInfo {
 // CloseAll closes all connections (for graceful shutdown).
 func (p *Pool) CloseAll() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-
+	conns := make(map[SessionID]*Connection, len(p.conns))
 	for id, conn := range p.conns {
-		// Wait for pending connections before closing.
-		<-conn.ready
+		conns[id] = conn
+		delete(p.conns, id)
+	}
+	p.mu.Unlock()
+
+	for id, conn := range conns {
+		select {
+		case <-conn.ready:
+		case <-time.After(10 * time.Second):
+			log.Printf("Timeout waiting for pending connection %s during shutdown", id)
+		}
 		conn.mu.Lock()
 		conn.Connected = false
 		if conn.Client != nil {
 			conn.Client.Close()
 		}
 		conn.mu.Unlock()
-		delete(p.conns, id)
 	}
 }
 
