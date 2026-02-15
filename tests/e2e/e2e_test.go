@@ -255,6 +255,27 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("RemoteInfoDetection", func(t *testing.T) {
+		// Connect and verify that remote OS info is detected.
+		text := callTool(t, env, "ssh_connect", map[string]any{
+			"host": fmt.Sprintf("testuser:password@%s:%d", env.sshHost, env.sshPort),
+		})
+		t.Logf("ssh_connect response: %s", text)
+
+		// The Docker container runs Ubuntu (Linux), so the connect message should contain "Linux".
+		if !strings.Contains(text, "Linux") {
+			t.Errorf("expected 'Linux' in connect message, got: %s", text)
+		}
+
+		// Verify ssh_list_sessions also shows OS info.
+		text = callTool(t, env, "ssh_list_sessions", map[string]any{})
+		t.Logf("ssh_list_sessions response: %s", text)
+
+		if !strings.Contains(text, "Linux") {
+			t.Errorf("expected 'Linux' in session listing, got: %s", text)
+		}
+	})
+
 	t.Run("Rename", func(t *testing.T) {
 		sessionID := sshConnect(t, env)
 

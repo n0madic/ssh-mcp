@@ -25,6 +25,9 @@ type ConnectionInfo struct {
 	LastUsed     time.Time `json:"last_used"`
 	CommandCount int       `json:"command_count"`
 	Connected    bool      `json:"connected"`
+	OS           string    `json:"os,omitempty"`
+	Arch         string    `json:"arch,omitempty"`
+	Shell        string    `json:"shell,omitempty"`
 }
 
 // Connection wraps an SSH client with metadata.
@@ -39,9 +42,10 @@ type Connection struct {
 	LastUsed     time.Time
 	CommandCount int
 	Connected    bool
+	RemoteInfo   RemoteInfo
 	clientConfig *ssh.ClientConfig // stored for auto-reconnect (no raw password)
 	addr         string            // stored for auto-reconnect
-	ready        chan struct{}      // closed when connection attempt completes
+	ready        chan struct{}     // closed when connection attempt completes
 	connectErr   error             // non-nil if the connection attempt failed
 }
 
@@ -251,6 +255,12 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 	pending.addr = addr
 	pending.mu.Unlock()
 
+	// Detect remote OS, architecture, and shell (best-effort, never blocks connection).
+	info := detectRemoteInfo(ctx, client)
+	pending.mu.Lock()
+	pending.RemoteInfo = info
+	pending.mu.Unlock()
+
 	close(pending.ready)
 	return id, nil
 }
@@ -367,6 +377,9 @@ func (p *Pool) ListConnections() []ConnectionInfo {
 				LastUsed:     conn.LastUsed,
 				CommandCount: conn.CommandCount,
 				Connected:    conn.Connected,
+				OS:           conn.RemoteInfo.OS,
+				Arch:         conn.RemoteInfo.Arch,
+				Shell:        conn.RemoteInfo.Shell,
 			})
 			conn.mu.RUnlock()
 		default:
@@ -399,6 +412,13 @@ func (p *Pool) CloseAll() {
 		conn.mu.Unlock()
 		delete(p.conns, id)
 	}
+}
+
+// GetRemoteInfo returns the detected remote host information.
+func (c *Connection) GetRemoteInfo() RemoteInfo {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.RemoteInfo
 }
 
 // IncrementCommandCount increments the command counter for a connection.

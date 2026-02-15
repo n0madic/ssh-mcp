@@ -31,6 +31,9 @@ func HandleListSessions(_ context.Context, deps *SessionsDeps, _ SSHListSessions
 			LastUsed:     c.LastUsed.Format(time.RFC3339),
 			CommandCount: c.CommandCount,
 			Connected:    c.Connected,
+			OS:           c.OS,
+			Arch:         c.Arch,
+			Shell:        c.Shell,
 		}
 	}
 

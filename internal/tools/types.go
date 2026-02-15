@@ -24,6 +24,9 @@ type SSHConnectOutput struct {
 	Port      int    `json:"port"`
 	User      string `json:"user"`
 	Message   string `json:"message"`
+	OS        string `json:"os,omitempty"`
+	Arch      string `json:"arch,omitempty"`
+	Shell     string `json:"shell,omitempty"`
 }
 
 // Text returns a human-readable representation of the connect result.
@@ -105,6 +108,9 @@ type SessionInfo struct {
 	LastUsed     string `json:"last_used"`
 	CommandCount int    `json:"command_count"`
 	Connected    bool   `json:"connected"`
+	OS           string `json:"os,omitempty"`
+	Arch         string `json:"arch,omitempty"`
+	Shell        string `json:"shell,omitempty"`
 }
 
 // Text returns a human-readable representation of the sessions list.
@@ -119,7 +125,18 @@ func (o SSHListSessionsOutput) Text() string {
 		if !s.Connected {
 			status = "disconnected"
 		}
-		fmt.Fprintf(&b, "  %s — %s, %d commands, last used %s\n", s.SessionID, status, s.CommandCount, s.LastUsed)
+		line := fmt.Sprintf("  %s — %s, %d commands, last used %s", s.SessionID, status, s.CommandCount, s.LastUsed)
+		if s.OS != "" {
+			detail := s.OS
+			if s.Arch != "" {
+				detail += " " + s.Arch
+			}
+			if s.Shell != "" {
+				detail += ", " + s.Shell
+			}
+			line += fmt.Sprintf(" [%s]", detail)
+		}
+		b.WriteString(line + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

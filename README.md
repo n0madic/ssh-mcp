@@ -4,7 +4,7 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 
 ## Features
 
-- **SSH Connection Pool** — reuses connections, auto-reconnect on failure, idle cleanup
+- **SSH Connection Pool** — reuses connections, auto-reconnect on failure, idle cleanup, auto-detection of remote OS and shell
 - **Authentication** — SSH keys (auto-discovery), password, `~/.ssh/config` resolution
 - **Command Execution** — with sudo support, working directory, timeout, ANSI stripping
 - **SFTP File Operations** — upload/download files and directories, edit files (replace/patch), list directories, file stat/rename, `~` path expansion
@@ -172,7 +172,7 @@ Connect to a remote host via SSH.
 }
 ```
 
-Returns `session_id` for use with other tools.
+Returns `session_id` for use with other tools. Also auto-detects remote OS, architecture, and shell.
 
 ### ssh_execute
 

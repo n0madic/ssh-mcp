@@ -37,11 +37,12 @@ SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
 - **Remote path expansion** — `~` and relative paths expanded via `sftp.RealPath()` server-side
 - **Text output** — handlers return human-readable text via `textResult()` instead of JSON for better UX
 - **Efficient directory traversal** — uses `sftp.Walk()` for optimal performance
+- **Remote OS detection** — auto-detects OS, architecture, and shell on connect via POSIX probe with Windows fallback; best-effort with 5s timeout; results stored on `Connection` and exposed in `ssh_connect`/`ssh_list_sessions` output
 
 ### Package Structure
 
 - `internal/config` — CLI flag/env parsing via `go-arg`, config structs, validation
-- `internal/connection` — SSH auth discovery, connection pool with auto-reconnect
+- `internal/connection` — SSH auth discovery, connection pool with auto-reconnect, remote OS/shell detection
 - `internal/security` — host/command filter (regex + CIDR, auto-anchored), rate limiter (token bucket, with cleanup), path traversal check, filename validation, local path validation
 - `internal/sshclient` — SFTP operations wrapper (upload/download/list/stat/rename/walk)
 - `internal/tools` — input/output types and handlers for all 12 MCP tools
@@ -150,6 +151,7 @@ Unit tests are in `*_test.go` files alongside source:
 - `config_test.go` — config building, validation, defaults, CLI parsing, new security flags
 - `auth_test.go` — host parsing, auth method discovery, missing known_hosts error
 - `pool_test.go` — pool operations, session management
+- `detect_test.go` — remote OS/shell detection parsing (POSIX and Windows), concurrency safety
 - `filter_test.go` — host/command allow/deny with regex, CIDR matching, auto-anchoring, partial match prevention
 - `ratelimit_test.go` — per-host rate limiting, burst, cleanup
 - `pathcheck_test.go` — path traversal detection, filename validation (length, control chars), local path validation, null bytes, base dir containment

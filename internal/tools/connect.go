@@ -80,11 +80,40 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 		return nil, fmt.Errorf("connect failed: %w", err)
 	}
 
+	// Retrieve detected remote info.
+	conn, err := deps.Pool.GetConnection(ctx, sessionID)
+	if err != nil {
+		// Connection succeeded but GetConnection failed — return basic output.
+		return &SSHConnectOutput{
+			SessionID: string(sessionID),
+			Host:      params.Host,
+			Port:      params.Port,
+			User:      params.User,
+			Message:   fmt.Sprintf("Connected to %s@%s:%d", params.User, params.Host, params.Port),
+		}, nil
+	}
+
+	info := conn.GetRemoteInfo()
+	message := fmt.Sprintf("Connected to %s@%s:%d", params.User, params.Host, params.Port)
+	if info.OS != "" {
+		detail := info.OS
+		if info.Arch != "" {
+			detail += " " + info.Arch
+		}
+		if info.Shell != "" {
+			detail += ", " + info.Shell
+		}
+		message += fmt.Sprintf(" (%s)", detail)
+	}
+
 	return &SSHConnectOutput{
 		SessionID: string(sessionID),
 		Host:      params.Host,
 		Port:      params.Port,
 		User:      params.User,
-		Message:   fmt.Sprintf("Connected to %s@%s:%d", params.User, params.Host, params.Port),
+		Message:   message,
+		OS:        info.OS,
+		Arch:      info.Arch,
+		Shell:     info.Shell,
 	}, nil
 }
