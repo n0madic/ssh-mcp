@@ -13,12 +13,11 @@ go vet ./...            # Lint
 
 ## Architecture
 
-SSH MCP Server provides 17 tools to AI agents via the Model Context Protocol:
+SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
 
 - **Core**: `ssh_connect`, `ssh_execute`, `ssh_disconnect`, `ssh_list_sessions`
-- **Files**: `ssh_upload_file`, `ssh_download_file`, `ssh_edit_file`, `ssh_file_stat`, `ssh_rename`
-- **Directories**: `ssh_list_directory`, `ssh_upload_directory`, `ssh_download_directory`
-- **Terminal**: `ssh_open_terminal`, `ssh_send_input`, `ssh_read_output`, `ssh_list_terminals`, `ssh_close_terminal`
+- **Files**: `ssh_upload`, `ssh_download`, `ssh_edit_file`, `ssh_file_info`
+- **Terminal**: `ssh_open_terminal`, `ssh_send_input`, `ssh_read_output`, `ssh_close_terminal`
 
 ### Key Design Decisions
 
@@ -48,8 +47,8 @@ SSH MCP Server provides 17 tools to AI agents via the Model Context Protocol:
 - `internal/config` — CLI flag/env parsing via `go-arg`, config structs, validation
 - `internal/connection` — SSH auth discovery, connection pool with auto-reconnect, remote OS/shell detection
 - `internal/security` — host/command filter (regex + CIDR, auto-anchored), rate limiter (token bucket, with cleanup), path traversal check, filename validation, local path validation
-- `internal/sshclient` — SFTP operations wrapper (upload/download/list/stat/rename/walk)
-- `internal/tools` — input/output types and handlers for all 16 MCP tools
+- `internal/sshclient` — SFTP operations wrapper (upload/download/list/stat/walk)
+- `internal/tools` — input/output types and handlers for all 12 MCP tools
 - `internal/server` — MCP server setup, tool registration with annotations, transports
 
 ### MCP SDK Usage
@@ -127,10 +126,9 @@ sshclient.ReadFile(sftp, remote)                   // Read content (optional max
 sshclient.ReadFile(sftp, remote, maxSize)          // Read with size limit
 sshclient.WriteFile(sftp, remote, data, perms)     // Write with permissions
 
-// File info and rename
+// File info
 sftpClient.Stat(path)      // Follow symlinks
 sftpClient.Lstat(path)     // Don't follow symlinks
-sftpClient.Rename(old, new)
 
 // Directory operations
 sshclient.ListDir(sftp, path)                      // List entries
@@ -161,10 +159,10 @@ Unit tests are in `*_test.go` files alongside source:
 - `pathcheck_test.go` — path traversal detection, filename validation (length, control chars), local path validation, null bytes, base dir containment
 - `server_test.go` — server creation, tool registration, HTTP auth middleware
 - `terminal_test.go` (connection) — pool open/close/get, list, ReadNew/ReadNewSince, done channel unblock, buffer compaction, maxTerminals
-- `terminal_test.go` (tools) — special key mapping, handler validation (disabled flag, missing session, missing terminal, both text+key, unknown key), list terminals (empty, filtered), escape replacer
+- `terminal_test.go` (tools) — special key mapping, handler validation (disabled flag, missing session, missing terminal, both text+key, unknown key), escape replacer
 
 E2E tests in `tests/e2e/` use testcontainers-go with a Docker SSH server:
-- `tests/e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, rename, sessions)
+- `tests/e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, sessions)
 - `tests/e2e/setup_test.go` — Docker container + MCP server setup helpers
 - `tests/e2e/Dockerfile` — Ubuntu SSH server image for testing
 
@@ -278,3 +276,5 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 - `ReadFile` supports optional `maxSize` parameter to prevent memory exhaustion
 - `FollowSymlinks` input uses `*bool` to correctly distinguish between "not set" (default true) and "set to false"
 - DRY helper `getConnectionWithRateLimit()` used by all file/dir handlers
+- **Consolidated tools** — `ssh_upload`/`ssh_download` auto-detect file vs directory; `ssh_file_info` combines stat + listing; `ssh_list_sessions` includes terminal info
+- **Tool alias backward compatibility** — `--disable-tools` accepts old names (e.g., `ssh_upload_file` maps to `ssh_upload`) via `toolAliases` map in `server.go`

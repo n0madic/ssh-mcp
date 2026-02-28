@@ -7,7 +7,7 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 - **SSH Connection Pool** — reuses connections, auto-reconnect on failure, idle cleanup, auto-detection of remote OS and shell
 - **Authentication** — SSH keys (auto-discovery), password, `~/.ssh/config` resolution
 - **Command Execution** — with sudo support, working directory, timeout, ANSI stripping
-- **SFTP File Operations** — upload/download files and directories, edit files (replace/patch), list directories, file stat/rename, `~` path expansion
+- **SFTP File Operations** — upload/download files and directories, edit files (replace/patch), file info with directory listing, `~` path expansion
 - **Interactive PTY Terminals** — buffered PTY sessions for interactive programs (vim, htop, REPL), dialogs, and real-time output (opt-in with `--enable-terminal`)
 - **Security** — host/command allowlist/denylist (regex + CIDR), per-host rate limiting, path traversal protection, filename length validation
 - **Transports** — stdio (default) and Streamable HTTP (`localhost` only)
@@ -133,7 +133,7 @@ export MCP_SSH_ENABLE_SUDO=true
 
 **Disable tools via environment variable:**
 ```bash
-export MCP_SSH_DISABLE_TOOLS="ssh_execute,ssh_edit_file,ssh_rename"
+export MCP_SSH_DISABLE_TOOLS="ssh_execute,ssh_edit_file"
 ./ssh-mcp
 ```
 
@@ -204,12 +204,13 @@ Disconnect an SSH session.
 
 ### ssh_list_sessions
 
-List all active SSH sessions (no parameters required).
+List all active SSH sessions with their connection details, statistics, and active terminal sessions (no parameters required).
 
-### ssh_upload_file
+### ssh_upload
 
-Upload a local file to a remote host via SFTP. Preserves file permissions. Supports `~` for remote home directory.
+Upload a local file or directory to a remote host via SFTP. Automatically detects whether the local path is a file or directory. Preserves file permissions and directory structure. Supports `~` for remote home directory.
 
+**Upload a file:**
 ```json
 {
   "session_id": "admin@example.com:22",
@@ -218,15 +219,34 @@ Upload a local file to a remote host via SFTP. Preserves file permissions. Suppo
 }
 ```
 
-### ssh_download_file
+**Upload a directory (recursive):**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "local_path": "/tmp/myapp",
+  "remote_path": "/opt/myapp"
+}
+```
 
-Download a file from a remote host via SFTP. Preserves file permissions. Supports `~` for remote home directory.
+### ssh_download
 
+Download a file or directory from a remote host via SFTP. Automatically detects whether the remote path is a file or directory. Preserves file permissions and directory structure. Supports `~` for remote home directory.
+
+**Download a file:**
 ```json
 {
   "session_id": "admin@example.com:22",
   "remote_path": "~/app.log",
   "local_path": "/tmp/app.log"
+}
+```
+
+**Download a directory (recursive):**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_path": "/opt/myapp",
+  "local_path": "/tmp/myapp-backup"
 }
 ```
 
@@ -257,45 +277,11 @@ Edit a file on a remote host. Two modes:
 }
 ```
 
-### ssh_list_directory
+### ssh_file_info
 
-List contents of a remote directory. Supports `~` for remote home directory.
+Get file or directory information (size, permissions, modification time). For directories, also lists contents unless `stat_only` is set. Supports `~` for remote home directory.
 
-```json
-{
-  "session_id": "admin@example.com:22",
-  "path": "~/"
-}
-```
-
-### ssh_upload_directory
-
-Recursively upload a local directory. Preserves directory structure and permissions.
-
-```json
-{
-  "session_id": "admin@example.com:22",
-  "local_path": "/tmp/myapp",
-  "remote_path": "/opt/myapp"
-}
-```
-
-### ssh_download_directory
-
-Recursively download a remote directory. Preserves directory structure and permissions.
-
-```json
-{
-  "session_id": "admin@example.com:22",
-  "remote_path": "/opt/myapp",
-  "local_path": "/tmp/myapp-backup"
-}
-```
-
-### ssh_file_stat
-
-Get file or directory information (size, permissions, modification time). Supports `~` for remote home directory.
-
+**File info:**
 ```json
 {
   "session_id": "admin@example.com:22",
@@ -304,27 +290,30 @@ Get file or directory information (size, permissions, modification time). Suppor
 }
 ```
 
-Returns file metadata including size, permissions (mode), modification time, and whether it's a directory or symlink.
-
-### ssh_rename
-
-Rename or move a file/directory on the remote host. Supports `~` for paths.
-
+**Directory listing (default for directories):**
 ```json
 {
   "session_id": "admin@example.com:22",
-  "old_path": "~/old-name.txt",
-  "new_path": "~/new-name.txt"
+  "remote_path": "~/"
 }
 ```
 
-Can be used for both renaming files in place and moving files to different directories.
+**Directory stat only (no listing):**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_path": "~/",
+  "stat_only": true
+}
+```
+
+Returns file metadata including size, permissions (mode), modification time, and whether it's a directory or symlink. For directories, also returns the list of entries.
 
 ---
 
 ## Interactive PTY Terminal Tools
 
-These five tools provide buffered PTY access for interactive programs. Requires `--enable-terminal`.
+These four tools provide buffered PTY access for interactive programs. Requires `--enable-terminal`.
 
 **Typical workflow:**
 
@@ -332,9 +321,10 @@ These five tools provide buffered PTY access for interactive programs. Requires 
 ssh_open_terminal   →  opens shell, returns terminal_id + initial prompt
 ssh_send_input      →  write text or keystrokes, get new output
 ssh_read_output     →  poll for new output without writing
-ssh_list_terminals  →  discover active terminals (recover after context loss)
 ssh_close_terminal  →  close the session
 ```
+
+Active terminals are also listed in `ssh_list_sessions` output.
 
 ### ssh_open_terminal
 
@@ -389,18 +379,6 @@ Read buffered output since the last read without writing anything.
 ```
 
 Set `wait_ms` to wait up to N milliseconds for new data (default 0 = return immediately).
-
-### ssh_list_terminals
-
-List all active PTY terminal sessions. Optionally filter by SSH session.
-
-```json
-{
-  "session_id": "admin@example.com:22"
-}
-```
-
-`session_id` is optional — omit it to list all terminals across all sessions.
 
 ### ssh_close_terminal
 

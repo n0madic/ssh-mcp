@@ -42,9 +42,28 @@ func textResult(text string) *mcp.CallToolResult {
 	}
 }
 
-// isToolDisabled checks if a tool is in the disabled list.
+// toolAliases maps old tool names to their new consolidated names for backward compatibility.
+var toolAliases = map[string]string{
+	"ssh_upload_file":        "ssh_upload",
+	"ssh_upload_directory":   "ssh_upload",
+	"ssh_download_file":      "ssh_download",
+	"ssh_download_directory": "ssh_download",
+	"ssh_file_stat":          "ssh_file_info",
+	"ssh_list_directory":     "ssh_file_info",
+}
+
+// isToolDisabled checks if a tool is in the disabled list, resolving old aliases.
 func (s *Server) isToolDisabled(toolName string) bool {
-	return slices.Contains(s.cfg.DisabledTools, toolName)
+	if slices.Contains(s.cfg.DisabledTools, toolName) {
+		return true
+	}
+	// Check if any disabled old name maps to this tool.
+	for _, disabled := range s.cfg.DisabledTools {
+		if alias, ok := toolAliases[disabled]; ok && alias == toolName {
+			return true
+		}
+	}
+	return false
 }
 
 // New creates and configures a new SSH MCP server.
@@ -107,25 +126,17 @@ func (s *Server) registerTools() {
 		Pool: s.pool, Filter: s.filter, RateLimiter: s.rateLimiter, Config: &s.cfg.SSH,
 	}
 	disconnectDeps := &tools.DisconnectDeps{Pool: s.pool}
-	sessionsDeps := &tools.SessionsDeps{Pool: s.pool}
-	fileUploadDeps := &tools.FileUploadDeps{
+	sessionsDeps := &tools.SessionsDeps{Pool: s.pool, TermPool: s.termPool}
+	uploadDeps := &tools.UploadDeps{
 		Pool: s.pool, LocalBaseDir: s.cfg.Security.LocalBaseDir, RateLimiter: fileRateLimiter,
 	}
-	fileDownloadDeps := &tools.FileDownloadDeps{
+	downloadDeps := &tools.DownloadDeps{
 		Pool: s.pool, LocalBaseDir: s.cfg.Security.LocalBaseDir, RateLimiter: fileRateLimiter,
 	}
 	fileEditDeps := &tools.FileEditDeps{
 		Pool: s.pool, RateLimiter: fileRateLimiter, MaxFileSize: s.cfg.Security.MaxFileSize,
 	}
-	dirListDeps := &tools.DirListDeps{Pool: s.pool, RateLimiter: fileRateLimiter}
-	dirUploadDeps := &tools.DirUploadDeps{
-		Pool: s.pool, LocalBaseDir: s.cfg.Security.LocalBaseDir, RateLimiter: fileRateLimiter,
-	}
-	dirDownloadDeps := &tools.DirDownloadDeps{
-		Pool: s.pool, LocalBaseDir: s.cfg.Security.LocalBaseDir, RateLimiter: fileRateLimiter,
-	}
-	fileStatDeps := &tools.FileStatDeps{Pool: s.pool, RateLimiter: fileRateLimiter}
-	fileRenameDeps := &tools.FileRenameDeps{Pool: s.pool, RateLimiter: fileRateLimiter}
+	fileInfoDeps := &tools.FileInfoDeps{Pool: s.pool, RateLimiter: fileRateLimiter}
 
 	// ssh_connect
 	if !s.isToolDisabled("ssh_connect") {
@@ -215,20 +226,20 @@ func (s *Server) registerTools() {
 		})
 	}
 
-	// ssh_upload_file
-	if !s.isToolDisabled("ssh_upload_file") {
+	// ssh_upload
+	if !s.isToolDisabled("ssh_upload") {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_upload_file",
-			Description: "Upload a local file to a remote host via SFTP. Preserves file permissions.",
+			Name:        "ssh_upload",
+			Description: "Upload a local file or directory to a remote host via SFTP. Automatically detects whether the local path is a file or directory. Preserves file permissions and directory structure.",
 			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH Upload File",
+				Title:           "SSH Upload",
 				ReadOnlyHint:    false,
 				DestructiveHint: boolPtr(false),
 				IdempotentHint:  false,
 				OpenWorldHint:   boolPtr(true),
 			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHUploadFileInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleUploadFile(ctx, fileUploadDeps, input)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHUploadInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleUpload(ctx, uploadDeps, input)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -236,20 +247,20 @@ func (s *Server) registerTools() {
 		})
 	}
 
-	// ssh_download_file
-	if !s.isToolDisabled("ssh_download_file") {
+	// ssh_download
+	if !s.isToolDisabled("ssh_download") {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_download_file",
-			Description: "Download a file from a remote host via SFTP. Preserves file permissions.",
+			Name:        "ssh_download",
+			Description: "Download a file or directory from a remote host via SFTP. Automatically detects whether the remote path is a file or directory. Preserves file permissions and directory structure.",
 			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH Download File",
+				Title:           "SSH Download",
 				ReadOnlyHint:    true,
 				DestructiveHint: boolPtr(false),
 				IdempotentHint:  true,
 				OpenWorldHint:   boolPtr(true),
 			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHDownloadFileInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleDownloadFile(ctx, fileDownloadDeps, input)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHDownloadInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleDownload(ctx, downloadDeps, input)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -278,104 +289,20 @@ func (s *Server) registerTools() {
 		})
 	}
 
-	// ssh_list_directory
-	if !s.isToolDisabled("ssh_list_directory") {
+	// ssh_file_info
+	if !s.isToolDisabled("ssh_file_info") {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_list_directory",
-			Description: "List the contents of a remote directory via SFTP. Returns file names, sizes, permissions, and modification times.",
+			Name:        "ssh_file_info",
+			Description: "Get file or directory information (size, permissions, modification time). For directories, also lists contents unless stat_only is set. Supports ~ for remote home directory.",
 			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH List Directory",
+				Title:           "SSH File Info",
 				ReadOnlyHint:    true,
 				DestructiveHint: boolPtr(false),
 				IdempotentHint:  true,
 				OpenWorldHint:   boolPtr(true),
 			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHListDirectoryInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleListDirectory(ctx, dirListDeps, input)
-			if err != nil {
-				return nil, nil, err
-			}
-			return textResult(out.Text()), nil, nil
-		})
-	}
-
-	// ssh_upload_directory
-	if !s.isToolDisabled("ssh_upload_directory") {
-		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_upload_directory",
-			Description: "Recursively upload a local directory to a remote host via SFTP. Preserves directory structure and file permissions.",
-			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH Upload Directory",
-				ReadOnlyHint:    false,
-				DestructiveHint: boolPtr(false),
-				IdempotentHint:  false,
-				OpenWorldHint:   boolPtr(true),
-			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHUploadDirectoryInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleUploadDirectory(ctx, dirUploadDeps, input)
-			if err != nil {
-				return nil, nil, err
-			}
-			return textResult(out.Text()), nil, nil
-		})
-	}
-
-	// ssh_download_directory
-	if !s.isToolDisabled("ssh_download_directory") {
-		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_download_directory",
-			Description: "Recursively download a remote directory to a local path via SFTP. Preserves directory structure and file permissions.",
-			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH Download Directory",
-				ReadOnlyHint:    true,
-				DestructiveHint: boolPtr(false),
-				IdempotentHint:  true,
-				OpenWorldHint:   boolPtr(true),
-			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHDownloadDirectoryInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleDownloadDirectory(ctx, dirDownloadDeps, input)
-			if err != nil {
-				return nil, nil, err
-			}
-			return textResult(out.Text()), nil, nil
-		})
-	}
-
-	// ssh_file_stat
-	if !s.isToolDisabled("ssh_file_stat") {
-		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_file_stat",
-			Description: "Get file or directory information (size, permissions, modification time). Supports ~ for remote home directory.",
-			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH File Stat",
-				ReadOnlyHint:    true,
-				DestructiveHint: boolPtr(false),
-				IdempotentHint:  true,
-				OpenWorldHint:   boolPtr(true),
-			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHFileStatInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleFileStat(ctx, fileStatDeps, input)
-			if err != nil {
-				return nil, nil, err
-			}
-			return textResult(out.Text()), nil, nil
-		})
-	}
-
-	// ssh_rename
-	if !s.isToolDisabled("ssh_rename") {
-		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_rename",
-			Description: "Rename or move a file/directory on remote host. Supports ~ for paths.",
-			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH Rename",
-				ReadOnlyHint:    false,
-				DestructiveHint: boolPtr(false),
-				IdempotentHint:  false,
-				OpenWorldHint:   boolPtr(true),
-			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHRenameInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleRename(ctx, fileRenameDeps, input)
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHFileInfoInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleFileInfo(ctx, fileInfoDeps, input)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -388,27 +315,6 @@ func (s *Server) registerTools() {
 		TermPool:    s.termPool,
 		RateLimiter: s.rateLimiter,
 		Config:      &s.cfg.SSH,
-	}
-
-	// ssh_list_terminals
-	if !s.isToolDisabled("ssh_list_terminals") {
-		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_list_terminals",
-			Description: "List all active PTY terminal sessions with their IDs, associated SSH sessions, and timestamps. Optionally filter by session_id.",
-			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH List Terminals",
-				ReadOnlyHint:    true,
-				DestructiveHint: boolPtr(false),
-				IdempotentHint:  true,
-				OpenWorldHint:   boolPtr(false),
-			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHListTerminalsInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleListTerminals(ctx, terminalDeps, input)
-			if err != nil {
-				return nil, nil, err
-			}
-			return textResult(out.Text()), nil, nil
-		})
 	}
 
 	// ssh_open_terminal

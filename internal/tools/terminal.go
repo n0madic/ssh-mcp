@@ -168,26 +168,6 @@ func HandleReadOutput(ctx context.Context, deps *TerminalDeps, input SSHReadOutp
 	}, nil
 }
 
-// HandleListTerminals lists active PTY terminal sessions, optionally filtered by session ID.
-func HandleListTerminals(_ context.Context, deps *TerminalDeps, input SSHListTerminalsInput) (*SSHListTerminalsOutput, error) {
-	infos := deps.TermPool.List(connection.SessionID(input.SessionID))
-
-	terminals := make([]TerminalInfoOutput, len(infos))
-	for i, info := range infos {
-		terminals[i] = TerminalInfoOutput{
-			TerminalID: string(info.ID),
-			SessionID:  string(info.SessionID),
-			CreatedAt:  info.CreatedAt.Format(time.RFC3339),
-			LastUsed:   info.LastUsed.Format(time.RFC3339),
-		}
-	}
-
-	return &SSHListTerminalsOutput{
-		Terminals: terminals,
-		Count:     len(terminals),
-	}, nil
-}
-
 // HandleCloseTerminal closes an active PTY terminal session.
 func HandleCloseTerminal(ctx context.Context, deps *TerminalDeps, input SSHCloseTerminalInput) (*SSHCloseTerminalOutput, error) {
 	if input.TerminalID == "" {

@@ -9,7 +9,8 @@ import (
 
 // SessionsDeps holds dependencies for the ssh_list_sessions tool handler.
 type SessionsDeps struct {
-	Pool *connection.Pool
+	Pool     *connection.Pool
+	TermPool *connection.TerminalPool
 }
 
 // SSHListSessionsInput is the input for ssh_list_sessions (empty, no parameters needed).
@@ -34,6 +35,23 @@ func HandleListSessions(_ context.Context, deps *SessionsDeps, _ SSHListSessions
 			OS:           c.OS,
 			Arch:         c.Arch,
 			Shell:        c.Shell,
+		}
+
+		// Include terminal sessions for this connection.
+		if deps.TermPool != nil {
+			infos := deps.TermPool.List(c.SessionID)
+			if len(infos) > 0 {
+				terminals := make([]TerminalInfoOutput, len(infos))
+				for j, info := range infos {
+					terminals[j] = TerminalInfoOutput{
+						TerminalID: string(info.ID),
+						SessionID:  string(info.SessionID),
+						CreatedAt:  info.CreatedAt.Format(time.RFC3339),
+						LastUsed:   info.LastUsed.Format(time.RFC3339),
+					}
+				}
+				sessions[i].Terminals = terminals
+			}
 		}
 	}
 

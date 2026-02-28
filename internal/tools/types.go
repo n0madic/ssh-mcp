@@ -100,17 +100,18 @@ type SSHListSessionsOutput struct {
 
 // SessionInfo provides information about an active session.
 type SessionInfo struct {
-	SessionID    string `json:"session_id"`
-	Host         string `json:"host"`
-	Port         int    `json:"port"`
-	User         string `json:"user"`
-	ConnectedAt  string `json:"connected_at"`
-	LastUsed     string `json:"last_used"`
-	CommandCount int    `json:"command_count"`
-	Connected    bool   `json:"connected"`
-	OS           string `json:"os,omitempty"`
-	Arch         string `json:"arch,omitempty"`
-	Shell        string `json:"shell,omitempty"`
+	SessionID    string               `json:"session_id"`
+	Host         string               `json:"host"`
+	Port         int                  `json:"port"`
+	User         string               `json:"user"`
+	ConnectedAt  string               `json:"connected_at"`
+	LastUsed     string               `json:"last_used"`
+	CommandCount int                  `json:"command_count"`
+	Connected    bool                 `json:"connected"`
+	OS           string               `json:"os,omitempty"`
+	Arch         string               `json:"arch,omitempty"`
+	Shell        string               `json:"shell,omitempty"`
+	Terminals    []TerminalInfoOutput `json:"terminals,omitempty"`
 }
 
 // Text returns a human-readable representation of the sessions list.
@@ -137,43 +138,48 @@ func (o SSHListSessionsOutput) Text() string {
 			line += fmt.Sprintf(" [%s]", detail)
 		}
 		b.WriteString(line + "\n")
+		for _, t := range s.Terminals {
+			fmt.Fprintf(&b, "    terminal %s — created %s, last used %s\n", t.TerminalID, t.CreatedAt, t.LastUsed)
+		}
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// SSHUploadFileInput is the input for the ssh_upload_file tool.
-type SSHUploadFileInput struct {
+// SSHUploadInput is the input for the ssh_upload tool.
+type SSHUploadInput struct {
 	SessionID  string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	LocalPath  string `json:"local_path" jsonschema:"Local file path to upload"`
+	LocalPath  string `json:"local_path" jsonschema:"Local file or directory path to upload"`
 	RemotePath string `json:"remote_path" jsonschema:"Remote destination path"`
 }
 
-// SSHUploadFileOutput is the output for the ssh_upload_file tool.
-type SSHUploadFileOutput struct {
-	BytesWritten int64  `json:"bytes_written"`
-	Message      string `json:"message"`
+// SSHUploadOutput is the output for the ssh_upload tool.
+type SSHUploadOutput struct {
+	FilesUploaded int    `json:"files_uploaded"`
+	BytesWritten  int64  `json:"bytes_written"`
+	Message       string `json:"message"`
 }
 
 // Text returns a human-readable representation of the upload result.
-func (o SSHUploadFileOutput) Text() string {
+func (o SSHUploadOutput) Text() string {
 	return o.Message
 }
 
-// SSHDownloadFileInput is the input for the ssh_download_file tool.
-type SSHDownloadFileInput struct {
+// SSHDownloadInput is the input for the ssh_download tool.
+type SSHDownloadInput struct {
 	SessionID  string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	RemotePath string `json:"remote_path" jsonschema:"Remote file path to download"`
+	RemotePath string `json:"remote_path" jsonschema:"Remote file or directory path to download"`
 	LocalPath  string `json:"local_path" jsonschema:"Local destination path"`
 }
 
-// SSHDownloadFileOutput is the output for the ssh_download_file tool.
-type SSHDownloadFileOutput struct {
-	BytesRead int64  `json:"bytes_read"`
-	Message   string `json:"message"`
+// SSHDownloadOutput is the output for the ssh_download tool.
+type SSHDownloadOutput struct {
+	FilesDownloaded int    `json:"files_downloaded"`
+	BytesRead       int64  `json:"bytes_read"`
+	Message         string `json:"message"`
 }
 
 // Text returns a human-readable representation of the download result.
-func (o SSHDownloadFileOutput) Text() string {
+func (o SSHDownloadOutput) Text() string {
 	return o.Message
 }
 
@@ -199,114 +205,47 @@ func (o SSHEditFileOutput) Text() string {
 	return o.Message
 }
 
-// SSHListDirectoryInput is the input for the ssh_list_directory tool.
-type SSHListDirectoryInput struct {
-	SessionID string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	Path      string `json:"path" jsonschema:"Remote directory path to list"`
-}
-
-// SSHListDirectoryOutput is the output for the ssh_list_directory tool.
-type SSHListDirectoryOutput struct {
-	Entries []sshclient.FileEntry `json:"entries"`
-	Count   int                   `json:"count"`
-}
-
-// Text returns a human-readable representation of the directory listing.
-func (o SSHListDirectoryOutput) Text() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%d entries:\n", o.Count)
-	for _, e := range o.Entries {
-		if e.IsDir {
-			fmt.Fprintf(&b, "  %s  %s/\n", e.Mode, e.Name)
-		} else {
-			fmt.Fprintf(&b, "  %s  %8d  %s\n", e.Mode, e.Size, e.Name)
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-// SSHUploadDirectoryInput is the input for the ssh_upload_directory tool.
-type SSHUploadDirectoryInput struct {
-	SessionID  string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	LocalPath  string `json:"local_path" jsonschema:"Local directory path to upload"`
-	RemotePath string `json:"remote_path" jsonschema:"Remote destination directory path"`
-}
-
-// SSHUploadDirectoryOutput is the output for the ssh_upload_directory tool.
-type SSHUploadDirectoryOutput struct {
-	FilesUploaded int    `json:"files_uploaded"`
-	BytesWritten  int64  `json:"bytes_written"`
-	Message       string `json:"message"`
-}
-
-// Text returns a human-readable representation of the upload directory result.
-func (o SSHUploadDirectoryOutput) Text() string {
-	return o.Message
-}
-
-// SSHDownloadDirectoryInput is the input for the ssh_download_directory tool.
-type SSHDownloadDirectoryInput struct {
-	SessionID  string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	RemotePath string `json:"remote_path" jsonschema:"Remote directory path to download"`
-	LocalPath  string `json:"local_path" jsonschema:"Local destination directory path"`
-}
-
-// SSHDownloadDirectoryOutput is the output for the ssh_download_directory tool.
-type SSHDownloadDirectoryOutput struct {
-	FilesDownloaded int    `json:"files_downloaded"`
-	BytesRead       int64  `json:"bytes_read"`
-	Message         string `json:"message"`
-}
-
-// Text returns a human-readable representation of the download directory result.
-func (o SSHDownloadDirectoryOutput) Text() string {
-	return o.Message
-}
-
-// SSHFileStatInput is the input for the ssh_file_stat tool.
-type SSHFileStatInput struct {
+// SSHFileInfoInput is the input for the ssh_file_info tool.
+type SSHFileInfoInput struct {
 	SessionID      string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
 	RemotePath     string `json:"remote_path" jsonschema:"Remote file or directory path"`
 	FollowSymlinks *bool  `json:"follow_symlinks,omitempty" jsonschema:"Optional. Follow symbolic links (default true)"`
+	StatOnly       *bool  `json:"stat_only,omitempty" jsonschema:"Optional. For directories: return only stat info without listing contents (default false)"`
 }
 
-// SSHFileStatOutput is the output for the ssh_file_stat tool.
-type SSHFileStatOutput struct {
-	Name      string `json:"name"`
-	Path      string `json:"path"`
-	Size      int64  `json:"size"`
-	Mode      string `json:"mode"`
-	IsDir     bool   `json:"is_dir"`
-	IsSymlink bool   `json:"is_symlink"`
-	ModTime   string `json:"mod_time"`
+// SSHFileInfoOutput is the output for the ssh_file_info tool.
+type SSHFileInfoOutput struct {
+	Name      string                `json:"name"`
+	Path      string                `json:"path"`
+	Size      int64                 `json:"size"`
+	Mode      string                `json:"mode"`
+	IsDir     bool                  `json:"is_dir"`
+	IsSymlink bool                  `json:"is_symlink"`
+	ModTime   string                `json:"mod_time"`
+	Entries   []sshclient.FileEntry `json:"entries,omitempty"`
 }
 
-// Text returns a human-readable representation of the file stat result.
-func (o SSHFileStatOutput) Text() string {
+// Text returns a human-readable representation of the file info result.
+func (o SSHFileInfoOutput) Text() string {
 	typeStr := "file"
 	if o.IsDir {
 		typeStr = "directory"
 	} else if o.IsSymlink {
 		typeStr = "symlink"
 	}
-	return fmt.Sprintf("%s: %s, size: %d, mode: %s, modified: %s", typeStr, o.Path, o.Size, o.Mode, o.ModTime)
-}
-
-// SSHRenameInput is the input for the ssh_rename tool.
-type SSHRenameInput struct {
-	SessionID string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	OldPath   string `json:"old_path" jsonschema:"Current path (source)"`
-	NewPath   string `json:"new_path" jsonschema:"New path (destination)"`
-}
-
-// SSHRenameOutput is the output for the ssh_rename tool.
-type SSHRenameOutput struct {
-	Message string `json:"message"`
-}
-
-// Text returns a human-readable representation of the rename result.
-func (o SSHRenameOutput) Text() string {
-	return o.Message
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: %s, size: %d, mode: %s, modified: %s", typeStr, o.Path, o.Size, o.Mode, o.ModTime)
+	if len(o.Entries) > 0 {
+		fmt.Fprintf(&b, "\n%d entries:\n", len(o.Entries))
+		for _, e := range o.Entries {
+			if e.IsDir {
+				fmt.Fprintf(&b, "  %s  %s/\n", e.Mode, e.Name)
+			} else {
+				fmt.Fprintf(&b, "  %s  %8d  %s\n", e.Mode, e.Size, e.Name)
+			}
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // SSHOpenTerminalInput is the input for the ssh_open_terminal tool.
@@ -372,36 +311,12 @@ func (o SSHReadOutputOutput) Text() string {
 	return o.Output
 }
 
-// SSHListTerminalsInput is the input for the ssh_list_terminals tool.
-type SSHListTerminalsInput struct {
-	SessionID string `json:"session_id,omitempty" jsonschema:"Optional. Filter by session ID; when empty, lists all terminals"`
-}
-
-// SSHListTerminalsOutput is the output for the ssh_list_terminals tool.
-type SSHListTerminalsOutput struct {
-	Terminals []TerminalInfoOutput `json:"terminals"`
-	Count     int                  `json:"count"`
-}
-
 // TerminalInfoOutput provides information about an active terminal session.
 type TerminalInfoOutput struct {
 	TerminalID string `json:"terminal_id"`
 	SessionID  string `json:"session_id"`
 	CreatedAt  string `json:"created_at"`
 	LastUsed   string `json:"last_used"`
-}
-
-// Text returns a human-readable representation of the terminals list.
-func (o SSHListTerminalsOutput) Text() string {
-	if o.Count == 0 {
-		return "No active terminals"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Active terminals (%d):\n", o.Count)
-	for _, t := range o.Terminals {
-		fmt.Fprintf(&b, "  %s — session %s, created %s, last used %s\n", t.TerminalID, t.SessionID, t.CreatedAt, t.LastUsed)
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 // SSHCloseTerminalInput is the input for the ssh_close_terminal tool.

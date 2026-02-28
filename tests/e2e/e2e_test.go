@@ -57,7 +57,7 @@ func TestE2E(t *testing.T) {
 		}
 
 		// Upload.
-		text := callTool(t, env, "ssh_upload_file", map[string]any{
+		text := callTool(t, env, "ssh_upload", map[string]any{
 			"session_id":  sessionID,
 			"local_path":  localUpload,
 			"remote_path": "/home/testuser/uploaded.txt",
@@ -75,7 +75,7 @@ func TestE2E(t *testing.T) {
 
 		// Download.
 		localDownload := filepath.Join(tmpDir, "downloaded.txt")
-		text = callTool(t, env, "ssh_download_file", map[string]any{
+		text = callTool(t, env, "ssh_download", map[string]any{
 			"session_id":  sessionID,
 			"remote_path": "/home/testuser/uploaded.txt",
 			"local_path":  localDownload,
@@ -103,7 +103,7 @@ func TestE2E(t *testing.T) {
 		os.WriteFile(filepath.Join(srcDir, "subdir", "file2.txt"), []byte("file2"), 0644)
 
 		// Upload directory.
-		text := callTool(t, env, "ssh_upload_directory", map[string]any{
+		text := callTool(t, env, "ssh_upload", map[string]any{
 			"session_id":  sessionID,
 			"local_path":  srcDir,
 			"remote_path": "/home/testuser/uploaded-dir",
@@ -129,7 +129,7 @@ func TestE2E(t *testing.T) {
 
 		// Download directory.
 		dstDir := filepath.Join(tmpDir, "dst-dir")
-		text = callTool(t, env, "ssh_download_directory", map[string]any{
+		text = callTool(t, env, "ssh_download", map[string]any{
 			"session_id":  sessionID,
 			"remote_path": "/home/testuser/uploaded-dir",
 			"local_path":  dstDir,
@@ -201,9 +201,9 @@ func TestE2E(t *testing.T) {
 	t.Run("ListDirectory", func(t *testing.T) {
 		sessionID := sshConnect(t, env)
 
-		text := callTool(t, env, "ssh_list_directory", map[string]any{
-			"session_id": sessionID,
-			"path":       "/home/testuser",
+		text := callTool(t, env, "ssh_file_info", map[string]any{
+			"session_id":  sessionID,
+			"remote_path": "/home/testuser",
 		})
 		t.Logf("List directory response: %s", text)
 
@@ -218,7 +218,7 @@ func TestE2E(t *testing.T) {
 	t.Run("FileStat", func(t *testing.T) {
 		sessionID := sshConnect(t, env)
 
-		text := callTool(t, env, "ssh_file_stat", map[string]any{
+		text := callTool(t, env, "ssh_file_info", map[string]any{
 			"session_id":  sessionID,
 			"remote_path": "/home/testuser/test-file.txt",
 		})
@@ -288,11 +288,10 @@ func TestE2E(t *testing.T) {
 			"backup":      false,
 		})
 
-		// Rename.
-		text := callTool(t, env, "ssh_rename", map[string]any{
+		// Rename via mv command (ssh_rename was removed in favor of ssh_execute + mv).
+		text := callTool(t, env, "ssh_execute", map[string]any{
 			"session_id": sessionID,
-			"old_path":   "/home/testuser/rename-src.txt",
-			"new_path":   "/home/testuser/rename-dst.txt",
+			"command":    "mv /home/testuser/rename-src.txt /home/testuser/rename-dst.txt",
 		})
 		t.Logf("Rename response: %s", text)
 
