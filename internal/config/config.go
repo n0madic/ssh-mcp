@@ -52,6 +52,8 @@ type Args struct {
 	MaxConnections   int            `arg:"--max-connections,env:MCP_SSH_MAX_CONNECTIONS" default:"0" placeholder:"NUM" help:"maximum number of concurrent SSH connections (0=unlimited)"`
 	HTTPToken        string         `arg:"--http-token,env:MCP_SSH_HTTP_TOKEN" placeholder:"TOKEN" help:"bearer token for HTTP transport authentication"`
 	DisableTools     commaSeparated `arg:"--disable-tools,separate,env:MCP_SSH_DISABLE_TOOLS" placeholder:"TOOL" help:"disable specific tools (can be specified multiple times or comma-separated)"`
+	EnableTerminal   bool           `arg:"--enable-terminal,env:MCP_SSH_ENABLE_TERMINAL" help:"allow interactive PTY terminal sessions (ssh_open_terminal)"`
+	MaxTerminals     int            `arg:"--max-terminals,env:MCP_SSH_MAX_TERMINALS" default:"0" placeholder:"NUM" help:"maximum number of concurrent PTY terminal sessions (0=unlimited)"`
 	ShowVersion      bool           `arg:"--version" help:"show version and exit"`
 }
 
@@ -83,8 +85,10 @@ type SSHConfig struct {
 	ConnectionTimeout time.Duration
 	MaxIdleTime       time.Duration
 	AllowSudo         bool
+	AllowTerminal     bool
 	StripANSI         bool
 	MaxConnections    int
+	MaxTerminals      int
 }
 
 // SecurityConfig holds security-related configuration.
@@ -142,6 +146,9 @@ func (c *Config) Validate() error {
 	if c.SSH.MaxConnections < 0 {
 		return fmt.Errorf("max connections must be non-negative")
 	}
+	if c.SSH.MaxTerminals < 0 {
+		return fmt.Errorf("max terminals must be non-negative")
+	}
 	return nil
 }
 
@@ -197,8 +204,10 @@ func buildConfig(args Args) *Config {
 			ConnectionTimeout: 30 * time.Second,
 			MaxIdleTime:       5 * time.Minute,
 			AllowSudo:         args.EnableSudo,
+			AllowTerminal:     args.EnableTerminal,
 			StripANSI:         true,
 			MaxConnections:    args.MaxConnections,
+			MaxTerminals:      args.MaxTerminals,
 		},
 		Security: SecurityConfig{
 			HostAllowlist:    []string(args.HostAllowlist),

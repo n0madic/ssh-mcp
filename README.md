@@ -8,9 +8,10 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 - **Authentication** — SSH keys (auto-discovery), password, `~/.ssh/config` resolution
 - **Command Execution** — with sudo support, working directory, timeout, ANSI stripping
 - **SFTP File Operations** — upload/download files and directories, edit files (replace/patch), list directories, file stat/rename, `~` path expansion
+- **Interactive PTY Terminals** — buffered PTY sessions for interactive programs (vim, htop, REPL), dialogs, and real-time output (opt-in with `--enable-terminal`)
 - **Security** — host/command allowlist/denylist (regex + CIDR), per-host rate limiting, path traversal protection, filename length validation
 - **Transports** — stdio (default) and Streamable HTTP (`localhost` only)
-- **Graceful Shutdown** — closes all SSH connections on SIGINT/SIGTERM
+- **Graceful Shutdown** — closes all SSH connections and terminal sessions on SIGINT/SIGTERM
 
 ## Installation
 
@@ -77,6 +78,8 @@ go build -o ssh-mcp .
 | `--max-connections` | `MCP_SSH_MAX_CONNECTIONS` | `0` | Maximum concurrent SSH connections (0=unlimited) |
 | `--http-token` | `MCP_SSH_HTTP_TOKEN` | _(empty)_ | Bearer token for HTTP transport authentication |
 | `--disable-tools` | `MCP_SSH_DISABLE_TOOLS` | _(empty)_ | Disable specific tools (can be specified multiple times) |
+| `--enable-terminal` | `MCP_SSH_ENABLE_TERMINAL` | `false` | Allow interactive PTY terminal sessions (`ssh_open_terminal`) |
+| `--max-terminals` | `MCP_SSH_MAX_TERMINALS` | `0` | Maximum concurrent PTY terminal sessions (0=unlimited) |
 | `--version` | — | — | Show version and exit |
 
 **Priority:** CLI flags > environment variables > defaults.
@@ -317,6 +320,100 @@ Rename or move a file/directory on the remote host. Supports `~` for paths.
 
 Can be used for both renaming files in place and moving files to different directories.
 
+---
+
+## Interactive PTY Terminal Tools
+
+These five tools provide buffered PTY access for interactive programs. Requires `--enable-terminal`.
+
+**Typical workflow:**
+
+```
+ssh_open_terminal   →  opens shell, returns terminal_id + initial prompt
+ssh_send_input      →  write text or keystrokes, get new output
+ssh_read_output     →  poll for new output without writing
+ssh_list_terminals  →  discover active terminals (recover after context loss)
+ssh_close_terminal  →  close the session
+```
+
+### ssh_open_terminal
+
+Open a PTY terminal session. Requires `--enable-terminal` flag on the server.
+
+```json
+{
+  "session_id": "admin@example.com:22",
+  "cols": 120,
+  "rows": 50,
+  "term_type": "xterm-256color",
+  "wait_ms": 500
+}
+```
+
+Returns `terminal_id` and the initial shell output (prompt). `cols`/`rows`/`term_type`/`wait_ms` are optional.
+
+### ssh_send_input
+
+Send text or a special key to a terminal and read new output.
+
+**Send a command:**
+```json
+{
+  "terminal_id": "term-1",
+  "text": "ls -la\n",
+  "wait_ms": 300
+}
+```
+
+**Send a special key:**
+```json
+{
+  "terminal_id": "term-1",
+  "special_key": "CTRL_C"
+}
+```
+
+Supported special keys: `CTRL_C`, `CTRL_D`, `CTRL_Z`, `ESC`, `TAB`, `BACKSPACE`, `ENTER`, `ARROW_UP`, `ARROW_DOWN`, `ARROW_LEFT`, `ARROW_RIGHT`.
+
+Use `\n` for newline and `\r` for carriage return in `text`. Exactly one of `text` or `special_key` must be provided — setting both is an error.
+
+### ssh_read_output
+
+Read buffered output since the last read without writing anything.
+
+```json
+{
+  "terminal_id": "term-1",
+  "wait_ms": 1000
+}
+```
+
+Set `wait_ms` to wait up to N milliseconds for new data (default 0 = return immediately).
+
+### ssh_list_terminals
+
+List all active PTY terminal sessions. Optionally filter by SSH session.
+
+```json
+{
+  "session_id": "admin@example.com:22"
+}
+```
+
+`session_id` is optional — omit it to list all terminals across all sessions.
+
+### ssh_close_terminal
+
+Close a PTY terminal session.
+
+```json
+{
+  "terminal_id": "term-1"
+}
+```
+
+---
+
 ## Claude Code Configuration
 
 Add to Claude Code using the CLI:
@@ -371,6 +468,7 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 - **HTTP authentication** — optional bearer token authentication for HTTP transport (`--http-token`)
 - **Host key verification** — enabled by default using `~/.ssh/known_hosts`; fails with a clear error if the file is missing (no silent downgrade to insecure mode)
 - **Sudo disabled by default** — must be explicitly enabled with `--enable-sudo`
+- **Interactive terminals disabled by default** — PTY sessions bypass the command filter; must be explicitly enabled with `--enable-terminal`
 - **Host filtering** — allowlist/denylist with regex and CIDR support; denylist takes priority; regex patterns are auto-anchored for full-string matching; CIDR patterns (e.g., `10.0.0.0/8`) match by IP range
 - **Command filtering** — allowlist/denylist with regex support; denylist takes priority; patterns are auto-anchored; filter runs on the final command (after cd/sudo prepend)
 - **Local path restriction** — `--local-base-dir` restricts all local file operations (upload/download) to a specific directory

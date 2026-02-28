@@ -308,3 +308,113 @@ type SSHRenameOutput struct {
 func (o SSHRenameOutput) Text() string {
 	return o.Message
 }
+
+// SSHOpenTerminalInput is the input for the ssh_open_terminal tool.
+type SSHOpenTerminalInput struct {
+	SessionID string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
+	Cols      int    `json:"cols,omitempty" jsonschema:"Terminal width in columns (default 120)"`
+	Rows      int    `json:"rows,omitempty" jsonschema:"Terminal height in rows (default 50)"`
+	TermType  string `json:"term_type,omitempty" jsonschema:"Terminal type (default xterm-256color)"`
+	WaitMs    int    `json:"wait_ms,omitempty" jsonschema:"Milliseconds to wait for initial output (default 500)"`
+}
+
+// SSHOpenTerminalOutput is the output for the ssh_open_terminal tool.
+type SSHOpenTerminalOutput struct {
+	TerminalID string `json:"terminal_id"`
+	Output     string `json:"output"`
+	Message    string `json:"message"`
+}
+
+// Text returns a human-readable representation of the open terminal result.
+func (o SSHOpenTerminalOutput) Text() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Terminal opened: %s\n%s", o.TerminalID, o.Message)
+	if o.Output != "" {
+		b.WriteString("\n")
+		b.WriteString(o.Output)
+	}
+	return b.String()
+}
+
+// SSHSendInputInput is the input for the ssh_send_input tool.
+type SSHSendInputInput struct {
+	TerminalID string `json:"terminal_id" jsonschema:"Terminal ID from ssh_open_terminal"`
+	Text       string `json:"text,omitempty" jsonschema:"Text to send (use \\n for newline, \\r for carriage return). Note: literal backslash-n in the JSON string is expanded to a real newline; there is no way to send a literal backslash-n sequence."`
+	SpecialKey string `json:"special_key,omitempty" jsonschema:"Special key: CTRL_C, CTRL_D, CTRL_Z, ESC, TAB, BACKSPACE, ENTER, ARROW_UP, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT"`
+	WaitMs     int    `json:"wait_ms,omitempty" jsonschema:"Milliseconds to wait for output after sending (default 300); increase for slow commands, output is returned directly in the response"`
+}
+
+// SSHSendInputOutput is the output for the ssh_send_input tool.
+type SSHSendInputOutput struct {
+	Output  string `json:"output"`
+	Written int    `json:"bytes_written"`
+}
+
+// Text returns a human-readable representation of the send input result.
+func (o SSHSendInputOutput) Text() string {
+	return o.Output
+}
+
+// SSHReadOutputInput is the input for the ssh_read_output tool.
+type SSHReadOutputInput struct {
+	TerminalID string `json:"terminal_id" jsonschema:"Terminal ID from ssh_open_terminal"`
+	WaitMs     int    `json:"wait_ms,omitempty" jsonschema:"Max milliseconds to wait for new output (default 0 = return immediately)"`
+}
+
+// SSHReadOutputOutput is the output for the ssh_read_output tool.
+type SSHReadOutputOutput struct {
+	Output string `json:"output"`
+	HasNew bool   `json:"has_new"`
+}
+
+// Text returns a human-readable representation of the read output result.
+func (o SSHReadOutputOutput) Text() string {
+	return o.Output
+}
+
+// SSHListTerminalsInput is the input for the ssh_list_terminals tool.
+type SSHListTerminalsInput struct {
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional. Filter by session ID; when empty, lists all terminals"`
+}
+
+// SSHListTerminalsOutput is the output for the ssh_list_terminals tool.
+type SSHListTerminalsOutput struct {
+	Terminals []TerminalInfoOutput `json:"terminals"`
+	Count     int                  `json:"count"`
+}
+
+// TerminalInfoOutput provides information about an active terminal session.
+type TerminalInfoOutput struct {
+	TerminalID string `json:"terminal_id"`
+	SessionID  string `json:"session_id"`
+	CreatedAt  string `json:"created_at"`
+	LastUsed   string `json:"last_used"`
+}
+
+// Text returns a human-readable representation of the terminals list.
+func (o SSHListTerminalsOutput) Text() string {
+	if o.Count == 0 {
+		return "No active terminals"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Active terminals (%d):\n", o.Count)
+	for _, t := range o.Terminals {
+		fmt.Fprintf(&b, "  %s — session %s, created %s, last used %s\n", t.TerminalID, t.SessionID, t.CreatedAt, t.LastUsed)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// SSHCloseTerminalInput is the input for the ssh_close_terminal tool.
+type SSHCloseTerminalInput struct {
+	TerminalID string `json:"terminal_id" jsonschema:"Terminal ID from ssh_open_terminal"`
+}
+
+// SSHCloseTerminalOutput is the output for the ssh_close_terminal tool.
+type SSHCloseTerminalOutput struct {
+	Message string `json:"message"`
+}
+
+// Text returns a human-readable representation of the close terminal result.
+func (o SSHCloseTerminalOutput) Text() string {
+	return o.Message
+}

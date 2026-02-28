@@ -22,6 +22,7 @@ import (
 type Server struct {
 	mcpServer   *mcp.Server
 	pool        *connection.Pool
+	termPool    *connection.TerminalPool
 	auth        *connection.AuthDiscovery
 	filter      *security.Filter
 	rateLimiter *security.RateLimiter
@@ -74,6 +75,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 	s := &Server{
 		mcpServer:   mcpServer,
 		pool:        pool,
+		termPool:    connection.NewTerminalPool(cfg.SSH.MaxTerminals),
 		auth:        auth,
 		filter:      filter,
 		rateLimiter: rateLimiter,
@@ -380,6 +382,118 @@ func (s *Server) registerTools() {
 			return textResult(out.Text()), nil, nil
 		})
 	}
+
+	terminalDeps := &tools.TerminalDeps{
+		Pool:        s.pool,
+		TermPool:    s.termPool,
+		RateLimiter: s.rateLimiter,
+		Config:      &s.cfg.SSH,
+	}
+
+	// ssh_list_terminals
+	if !s.isToolDisabled("ssh_list_terminals") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_list_terminals",
+			Description: "List all active PTY terminal sessions with their IDs, associated SSH sessions, and timestamps. Optionally filter by session_id.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH List Terminals",
+				ReadOnlyHint:    true,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  true,
+				OpenWorldHint:   boolPtr(false),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHListTerminalsInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleListTerminals(ctx, terminalDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_open_terminal
+	if !s.isToolDisabled("ssh_open_terminal") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_open_terminal",
+			Description: "Open an interactive PTY terminal session over SSH. Returns a terminal_id for use with ssh_send_input, ssh_read_output, and ssh_close_terminal. Requires --enable-terminal flag.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Open Terminal",
+				ReadOnlyHint:    false,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  false,
+				OpenWorldHint:   boolPtr(true),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHOpenTerminalInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleOpenTerminal(ctx, terminalDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_send_input
+	if !s.isToolDisabled("ssh_send_input") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_send_input",
+			Description: "Send text or a special key (CTRL_C, ENTER, TAB, etc.) to an interactive PTY terminal and read back the new output. Always returns output captured during wait_ms — no need to call ssh_read_output afterwards for quick commands. Use ssh_read_output only for long-running commands or TUI programs that produce output without further input.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Send Input",
+				ReadOnlyHint:    false,
+				DestructiveHint: boolPtr(true),
+				IdempotentHint:  false,
+				OpenWorldHint:   boolPtr(true),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHSendInputInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleSendInput(ctx, terminalDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_read_output
+	if !s.isToolDisabled("ssh_read_output") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_read_output",
+			Description: "Read buffered output from a PTY terminal since the last read. Optionally waits up to wait_ms milliseconds for new data. Use this for long-running commands or TUI programs that produce output independently of input; for quick commands prefer ssh_send_input which already returns output.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Read Output",
+				ReadOnlyHint:    true,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  false,
+				OpenWorldHint:   boolPtr(false),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHReadOutputInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleReadOutput(ctx, terminalDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_close_terminal
+	if !s.isToolDisabled("ssh_close_terminal") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_close_terminal",
+			Description: "Close an active PTY terminal session. The terminal_id will no longer be usable.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Close Terminal",
+				ReadOnlyHint:    false,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  true,
+				OpenWorldHint:   boolPtr(false),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHCloseTerminalInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleCloseTerminal(ctx, terminalDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
 }
 
 // authMiddleware wraps an HTTP handler with bearer token authentication.
@@ -502,6 +616,8 @@ func (s *Server) runHTTP(ctx context.Context) error {
 }
 
 func (s *Server) shutdown() {
+	log.Println("Closing all terminal sessions...")
+	s.termPool.CloseAll()
 	log.Println("Closing all SSH connections...")
 	s.pool.CloseAll()
 	log.Println("Shutdown complete")

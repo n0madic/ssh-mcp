@@ -13,11 +13,12 @@ go vet ./...            # Lint
 
 ## Architecture
 
-SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
+SSH MCP Server provides 17 tools to AI agents via the Model Context Protocol:
 
 - **Core**: `ssh_connect`, `ssh_execute`, `ssh_disconnect`, `ssh_list_sessions`
 - **Files**: `ssh_upload_file`, `ssh_download_file`, `ssh_edit_file`, `ssh_file_stat`, `ssh_rename`
 - **Directories**: `ssh_list_directory`, `ssh_upload_directory`, `ssh_download_directory`
+- **Terminal**: `ssh_open_terminal`, `ssh_send_input`, `ssh_read_output`, `ssh_list_terminals`, `ssh_close_terminal`
 
 ### Key Design Decisions
 
@@ -38,6 +39,9 @@ SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
 - **Text output** — handlers return human-readable text via `textResult()` instead of JSON for better UX
 - **Efficient directory traversal** — uses `sftp.Walk()` for optimal performance
 - **Remote OS detection** — auto-detects OS, architecture, and shell on connect via POSIX probe with Windows fallback; best-effort with 5s timeout; results stored on `Connection` and exposed in `ssh_connect`/`ssh_list_sessions` output
+- **Terminal pool limit** — `--max-terminals` caps concurrent PTY sessions; enforced with pool lock before SSH session creation
+- **Terminal done channel** — `done` channel closed via `sync.Once` (`signalDone`) when read goroutines exit; unblocks `ReadNew`/`ReadNewSince` immediately on close
+- **Terminal buffer compaction** — output buffer compacted (copied to index 0) when `readPos` exceeds 1 MB to reclaim memory
 
 ### Package Structure
 
@@ -45,7 +49,7 @@ SSH MCP Server provides 12 tools to AI agents via the Model Context Protocol:
 - `internal/connection` — SSH auth discovery, connection pool with auto-reconnect, remote OS/shell detection
 - `internal/security` — host/command filter (regex + CIDR, auto-anchored), rate limiter (token bucket, with cleanup), path traversal check, filename validation, local path validation
 - `internal/sshclient` — SFTP operations wrapper (upload/download/list/stat/rename/walk)
-- `internal/tools` — input/output types and handlers for all 12 MCP tools
+- `internal/tools` — input/output types and handlers for all 16 MCP tools
 - `internal/server` — MCP server setup, tool registration with annotations, transports
 
 ### MCP SDK Usage
@@ -156,6 +160,8 @@ Unit tests are in `*_test.go` files alongside source:
 - `ratelimit_test.go` — per-host rate limiting, burst, cleanup
 - `pathcheck_test.go` — path traversal detection, filename validation (length, control chars), local path validation, null bytes, base dir containment
 - `server_test.go` — server creation, tool registration, HTTP auth middleware
+- `terminal_test.go` (connection) — pool open/close/get, list, ReadNew/ReadNewSince, done channel unblock, buffer compaction, maxTerminals
+- `terminal_test.go` (tools) — special key mapping, handler validation (disabled flag, missing session, missing terminal, both text+key, unknown key), list terminals (empty, filtered), escape replacer
 
 E2E tests in `tests/e2e/` use testcontainers-go with a Docker SSH server:
 - `tests/e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, rename, sessions)

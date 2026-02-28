@@ -318,3 +318,30 @@ func TestValidate_InvalidMaxConnections(t *testing.T) {
 		t.Error("expected error for negative max connections")
 	}
 }
+
+func TestBuildConfig_MaxTerminals(t *testing.T) {
+	args := Args{
+		MaxTerminals:   10,
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+
+	if cfg.SSH.MaxTerminals != 10 {
+		t.Errorf("expected MaxTerminals=10, got %d", cfg.SSH.MaxTerminals)
+	}
+}
+
+func TestValidate_InvalidMaxTerminals(t *testing.T) {
+	args := Args{
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+	cfg.SSH.MaxTerminals = -1
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for negative max terminals")
+	}
+}
