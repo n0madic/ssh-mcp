@@ -119,9 +119,11 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 		case <-graceTimer.C:
 			// Grace period expired, SIGKILL.
 			_ = session.Signal(ssh.SIGKILL)
+			killTimer := time.NewTimer(1 * time.Second)
 			select {
 			case <-done:
-			case <-time.After(1 * time.Second):
+				killTimer.Stop()
+			case <-killTimer.C:
 			}
 			exitCode = -1
 		}
