@@ -1,6 +1,6 @@
 # SSH MCP Server
 
-A Model Context Protocol (MCP) server that provides AI agents with secure SSH access to remote hosts. Supports connection pooling, key-based and password authentication, sudo, file operations via SFTP, command filtering, rate limiting, and graceful shutdown.
+A Model Context Protocol (MCP) server that provides AI agents with secure SSH access to remote hosts. Supports connection pooling, key-based and password authentication, sudo, file operations via SFTP, SSH tunnels (local port forwarding), command filtering, rate limiting, output truncation, and graceful shutdown.
 
 ## Features
 
@@ -9,9 +9,11 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 - **Command Execution** — with sudo support, working directory, timeout, graceful kill (SIGTERM → SIGKILL), ANSI stripping
 - **SFTP File Operations** — upload/download files and directories, read files with line offset/limit, edit files (replace/patch/create), file info with directory listing, `~` path expansion
 - **Interactive PTY Terminals** — buffered PTY sessions for interactive programs (vim, htop, REPL), dialogs, and real-time output (opt-in with `--enable-terminal`)
+- **SSH Tunnels** — local port forwarding (localhost:port → remote:port via SSH) for accessing remote services like databases, APIs, and web servers
+- **Output Truncation** — configurable per-stream output size limit (`--max-output-size`) to prevent LLM context overflow
 - **Security** — host/command allowlist/denylist (regex + CIDR), per-host rate limiting, path traversal protection, filename length validation
 - **Transports** — stdio (default) and Streamable HTTP (`localhost` only)
-- **Graceful Shutdown** — closes all SSH connections and terminal sessions on SIGINT/SIGTERM
+- **Graceful Shutdown** — closes all tunnels, SSH connections, and terminal sessions on SIGINT/SIGTERM
 
 ## Installation
 
@@ -80,6 +82,8 @@ go build -o ssh-mcp .
 | `--disable-tools` | `MCP_SSH_DISABLE_TOOLS` | _(empty)_ | Disable specific tools (can be specified multiple times) |
 | `--enable-terminal` | `MCP_SSH_ENABLE_TERMINAL` | `false` | Allow interactive PTY terminal sessions (`ssh_open_terminal`) |
 | `--max-terminals` | `MCP_SSH_MAX_TERMINALS` | `0` | Maximum concurrent PTY terminal sessions (0=unlimited) |
+| `--max-output-size` | `MCP_SSH_MAX_OUTPUT_SIZE` | `0` | Maximum output size per stream in bytes for execute/terminal results (0=unlimited) |
+| `--max-tunnels` | `MCP_SSH_MAX_TUNNELS` | `0` | Maximum concurrent SSH tunnels (0=unlimited) |
 | `--version` | — | — | Show version and exit |
 
 **Priority:** CLI flags > environment variables > defaults.
@@ -124,6 +128,16 @@ export MCP_SSH_ENABLE_SUDO=true
 **Limit concurrent connections and file size:**
 ```bash
 ./ssh-mcp --max-connections 5 --max-file-size 10485760
+```
+
+**Limit output size to prevent LLM context overflow:**
+```bash
+./ssh-mcp --max-output-size 65536
+```
+
+**Limit concurrent SSH tunnels:**
+```bash
+./ssh-mcp --max-tunnels 5
 ```
 
 **Disable specific tools (multiple flags):**
@@ -205,7 +219,7 @@ Disconnect an SSH session.
 
 ### ssh_list_sessions
 
-List all active SSH sessions with their connection details, statistics, and active terminal sessions (no parameters required).
+List all active SSH sessions with their connection details, statistics, active terminal sessions, and active tunnels (no parameters required).
 
 ### ssh_upload
 
@@ -426,6 +440,66 @@ Close a PTY terminal session.
 
 ---
 
+## SSH Tunnel Tools
+
+These three tools provide local port forwarding through SSH connections. Useful for accessing remote databases, web servers, or APIs that aren't directly reachable.
+
+**Typical workflow:**
+
+```
+ssh_tunnel_create  →  binds local port, forwards to remote address
+ssh_tunnel_list    →  show active tunnels
+ssh_tunnel_close   →  stop forwarding and release the port
+```
+
+Active tunnels are also listed in `ssh_list_sessions` output. Tunnels are automatically closed when the parent SSH session is disconnected.
+
+### ssh_tunnel_create
+
+Create a local port forwarding tunnel.
+
+**Auto-assign local port:**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_addr": "localhost:5432",
+  "local_port": 0
+}
+```
+
+**Specific local port:**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_addr": "10.0.0.5:3306",
+  "local_port": 13306
+}
+```
+
+Returns `tunnel_id`, the bound local address and port, and the remote address.
+
+### ssh_tunnel_list
+
+List all active tunnels. Optionally filter by session ID.
+
+```json
+{
+  "session_id": "admin@example.com:22"
+}
+```
+
+### ssh_tunnel_close
+
+Close an active tunnel.
+
+```json
+{
+  "tunnel_id": "admin@example.com:22-1"
+}
+```
+
+---
+
 ## Claude Code Configuration
 
 Add to Claude Code using the CLI:
@@ -489,6 +563,8 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 - **Rate limiting** — per-host token bucket rate limiter with automatic stale entry cleanup; optionally applies to SFTP file operations (`--rate-limit-file-ops`)
 - **Connection pool limits** — `--max-connections` caps the number of concurrent SSH connections
 - **File size limits** — `--max-file-size` caps remote file read operations to prevent memory exhaustion
+- **Output truncation** — `--max-output-size` limits per-stream output size in execute, terminal, and file_info tools to prevent LLM context overflow
+- **Tunnel pool limits** — `--max-tunnels` caps the number of concurrent SSH tunnels
 - **No credential persistence** — passwords are not stored in the connection pool; only the SSH client config (with key-based auth methods) is retained for auto-reconnect
 - **Remote path expansion** — `~` expands to user's home directory on remote server
 

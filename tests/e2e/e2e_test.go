@@ -276,6 +276,61 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("TunnelOperations", func(t *testing.T) {
+		sessionID := sshConnect(t, env)
+
+		// Create a tunnel to the SSH service itself (port 22 on remote).
+		text := callTool(t, env, "ssh_tunnel_create", map[string]any{
+			"session_id":  sessionID,
+			"remote_addr": "localhost:22",
+			"local_port":  0,
+		})
+		t.Logf("Tunnel create response: %s", text)
+		if !strings.Contains(text, "Tunnel created") {
+			t.Errorf("expected 'Tunnel created' message, got: %s", text)
+		}
+
+		// List tunnels.
+		text = callTool(t, env, "ssh_tunnel_list", map[string]any{})
+		t.Logf("Tunnel list response: %s", text)
+		if !strings.Contains(text, "Active tunnels") {
+			t.Errorf("expected 'Active tunnels' in list, got: %s", text)
+		}
+		if !strings.Contains(text, "localhost:22") {
+			t.Errorf("expected 'localhost:22' remote addr in list, got: %s", text)
+		}
+
+		// List tunnels filtered by session.
+		text = callTool(t, env, "ssh_tunnel_list", map[string]any{
+			"session_id": sessionID,
+		})
+		if !strings.Contains(text, "Active tunnels") {
+			t.Errorf("expected filtered list to contain tunnel, got: %s", text)
+		}
+
+		// Extract tunnel ID from session listing (tunnels appear in ssh_list_sessions too).
+		text = callTool(t, env, "ssh_list_sessions", map[string]any{})
+		t.Logf("List sessions with tunnel: %s", text)
+		if !strings.Contains(text, "tunnel") {
+			t.Errorf("expected 'tunnel' in session listing, got: %s", text)
+		}
+
+		// Close all tunnels by listing and closing.
+		text = callTool(t, env, "ssh_tunnel_list", map[string]any{})
+		// The list format includes tunnel IDs; we'll disconnect the session which closes tunnels.
+
+		// Disconnect session — should also close tunnels.
+		callTool(t, env, "ssh_disconnect", map[string]any{
+			"session_id": sessionID,
+		})
+
+		// Verify tunnels are gone.
+		text = callTool(t, env, "ssh_tunnel_list", map[string]any{})
+		if !strings.Contains(text, "No active tunnels") {
+			t.Errorf("expected no tunnels after disconnect, got: %s", text)
+		}
+	})
+
 	t.Run("Rename", func(t *testing.T) {
 		sessionID := sshConnect(t, env)
 

@@ -13,11 +13,12 @@ go vet ./...            # Lint
 
 ## Architecture
 
-SSH MCP Server provides 13 tools to AI agents via the Model Context Protocol:
+SSH MCP Server provides 16 tools to AI agents via the Model Context Protocol:
 
 - **Core**: `ssh_connect`, `ssh_execute`, `ssh_disconnect`, `ssh_list_sessions`
 - **Files**: `ssh_upload`, `ssh_download`, `ssh_read_file`, `ssh_edit_file`, `ssh_file_info`
 - **Terminal**: `ssh_open_terminal`, `ssh_send_input`, `ssh_read_output`, `ssh_close_terminal`
+- **Tunnels**: `ssh_tunnel_create`, `ssh_tunnel_list`, `ssh_tunnel_close`
 
 ### Key Design Decisions
 
@@ -45,6 +46,10 @@ SSH MCP Server provides 13 tools to AI agents via the Model Context Protocol:
 - **Graceful timeout** — `ssh_execute` sends SIGTERM first, waits 5s grace period, then SIGKILL; returns partial stdout/stderr as result (not error) with `[TIMEOUT]` marker
 - **File read with pagination** — `ssh_read_file` supports line offset/limit for token-efficient reading; formats output with `cat -n` style line numbers
 - **Edit creates files** — `ssh_edit_file` replace mode creates new files if they don't exist; message distinguishes "Created" vs "Replaced"
+- **Output truncation** — `--max-output-size` limits per-stream output in `ssh_execute` (stdout/stderr), terminal handlers, and `ssh_file_info`; applied after ANSI stripping and before timeout markers; `TruncateOutput()` helper in `helpers.go`
+- **SSH tunnels** — local port forwarding via `TunnelPool` in `internal/tunnel`; accept loop goroutine per tunnel; bidirectional `io.Copy` forwarding; tunnels closed on session disconnect and server shutdown
+- **Tunnel pool limit** — `--max-tunnels` caps concurrent tunnels; enforced with pool lock before listener creation
+- **Tunnel auto-cleanup** — `CloseBySession()` called in `HandleDisconnect` before pool disconnect; `CloseAll()` called in server shutdown before terminal/connection cleanup
 
 ### Package Structure
 
@@ -52,7 +57,8 @@ SSH MCP Server provides 13 tools to AI agents via the Model Context Protocol:
 - `internal/connection` — SSH auth discovery, connection pool with auto-reconnect, remote OS/shell detection
 - `internal/security` — host/command filter (regex + CIDR, auto-anchored), rate limiter (token bucket, with cleanup), path traversal check, filename validation, local path validation
 - `internal/sshclient` — SFTP operations wrapper (upload/download/list/stat/walk)
-- `internal/tools` — input/output types and handlers for all 13 MCP tools
+- `internal/tunnel` — SSH tunnel pool with local port forwarding, accept loop, bidirectional forwarding
+- `internal/tools` — input/output types and handlers for all 16 MCP tools
 - `internal/server` — MCP server setup, tool registration with annotations, transports
 
 ### MCP SDK Usage
@@ -167,9 +173,12 @@ Unit tests are in `*_test.go` files alongside source:
 - `execute_test.go` — kill grace period constant, execute output Text() for timeout/normal/error scenarios
 - `file_read_test.go` — read file output Text() for content, empty file, offset beyond EOF
 - `types_test.go` — SSHConnectInput without UseSSHConfig, SSHReadFileOutput Text() edge cases
+- `helpers_test.go` — TruncateOutput: unlimited, negative, short string, exact limit, over limit, empty string
+- `tunnel_test.go` (tunnel) — pool open/close, get unknown, CloseBySession, List filtering, CloseAll, maxTunnels, double close
+- `tunnel_test.go` (tools) — handler validation (missing session_id, missing remote_addr, missing tunnel_id, close not found), list empty, list output Text()
 
 E2E tests in `tests/e2e/` use testcontainers-go with a Docker SSH server:
-- `tests/e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, sessions)
+- `tests/e2e/e2e_test.go` — all E2E test scenarios (connect, execute, file/dir ops, edit, stat, sessions, tunnels)
 - `tests/e2e/setup_test.go` — Docker container + MCP server setup helpers
 - `tests/e2e/Dockerfile` — Ubuntu SSH server image for testing
 
@@ -283,5 +292,5 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 - `ReadFile` supports optional `maxSize` parameter to prevent memory exhaustion
 - `FollowSymlinks` input uses `*bool` to correctly distinguish between "not set" (default true) and "set to false"
 - DRY helper `getConnectionWithRateLimit()` used by all file/dir handlers
-- **Consolidated tools** — `ssh_upload`/`ssh_download` auto-detect file vs directory; `ssh_file_info` combines stat + listing; `ssh_list_sessions` includes terminal info
+- **Consolidated tools** — `ssh_upload`/`ssh_download` auto-detect file vs directory; `ssh_file_info` combines stat + listing; `ssh_list_sessions` includes terminal and tunnel info
 - **Tool alias backward compatibility** — `--disable-tools` accepts old names (e.g., `ssh_upload_file` maps to `ssh_upload`) via `toolAliases` map in `server.go`

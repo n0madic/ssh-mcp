@@ -5,12 +5,14 @@ import (
 	"time"
 
 	"github.com/n0madic/ssh-mcp/internal/connection"
+	"github.com/n0madic/ssh-mcp/internal/tunnel"
 )
 
 // SessionsDeps holds dependencies for the ssh_list_sessions tool handler.
 type SessionsDeps struct {
-	Pool     *connection.Pool
-	TermPool *connection.TerminalPool
+	Pool       *connection.Pool
+	TermPool   *connection.TerminalPool
+	TunnelPool *tunnel.TunnelPool
 }
 
 // SSHListSessionsInput is the input for ssh_list_sessions (empty, no parameters needed).
@@ -51,6 +53,18 @@ func HandleListSessions(_ context.Context, deps *SessionsDeps, _ SSHListSessions
 					}
 				}
 				sessions[i].Terminals = terminals
+			}
+		}
+
+		// Include tunnel sessions for this connection.
+		if deps.TunnelPool != nil {
+			tInfos := deps.TunnelPool.List(string(c.SessionID))
+			if len(tInfos) > 0 {
+				tunnels := make([]TunnelInfoOutput, len(tInfos))
+				for j, info := range tInfos {
+					tunnels[j] = tunnelInfoToOutput(info)
+				}
+				sessions[i].Tunnels = tunnels
 			}
 		}
 	}

@@ -54,6 +54,8 @@ type Args struct {
 	DisableTools     commaSeparated `arg:"--disable-tools,separate,env:MCP_SSH_DISABLE_TOOLS" placeholder:"TOOL" help:"disable specific tools (can be specified multiple times or comma-separated)"`
 	EnableTerminal   bool           `arg:"--enable-terminal,env:MCP_SSH_ENABLE_TERMINAL" help:"allow interactive PTY terminal sessions (ssh_open_terminal)"`
 	MaxTerminals     int            `arg:"--max-terminals,env:MCP_SSH_MAX_TERMINALS" default:"0" placeholder:"NUM" help:"maximum number of concurrent PTY terminal sessions (0=unlimited)"`
+	MaxOutputSize    int            `arg:"--max-output-size,env:MCP_SSH_MAX_OUTPUT_SIZE" default:"0" placeholder:"BYTES" help:"maximum output size per stream in bytes for execute/terminal results (0=unlimited)"`
+	MaxTunnels       int            `arg:"--max-tunnels,env:MCP_SSH_MAX_TUNNELS" default:"0" placeholder:"NUM" help:"maximum number of concurrent SSH tunnels (0=unlimited)"`
 	ShowVersion      bool           `arg:"--version" help:"show version and exit"`
 }
 
@@ -89,6 +91,8 @@ type SSHConfig struct {
 	StripANSI         bool
 	MaxConnections    int
 	MaxTerminals      int
+	MaxOutputSize     int
+	MaxTunnels        int
 }
 
 // SecurityConfig holds security-related configuration.
@@ -149,6 +153,12 @@ func (c *Config) Validate() error {
 	if c.SSH.MaxTerminals < 0 {
 		return fmt.Errorf("max terminals must be non-negative")
 	}
+	if c.SSH.MaxOutputSize < 0 {
+		return fmt.Errorf("max output size must be non-negative")
+	}
+	if c.SSH.MaxTunnels < 0 {
+		return fmt.Errorf("max tunnels must be non-negative")
+	}
 	return nil
 }
 
@@ -208,6 +218,8 @@ func buildConfig(args Args) *Config {
 			StripANSI:         true,
 			MaxConnections:    args.MaxConnections,
 			MaxTerminals:      args.MaxTerminals,
+			MaxOutputSize:     args.MaxOutputSize,
+			MaxTunnels:        args.MaxTunnels,
 		},
 		Security: SecurityConfig{
 			HostAllowlist:    []string(args.HostAllowlist),

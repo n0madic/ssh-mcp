@@ -345,3 +345,57 @@ func TestValidate_InvalidMaxTerminals(t *testing.T) {
 		t.Error("expected error for negative max terminals")
 	}
 }
+
+func TestBuildConfig_MaxOutputSize(t *testing.T) {
+	args := Args{
+		MaxOutputSize:  4096,
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+
+	if cfg.SSH.MaxOutputSize != 4096 {
+		t.Errorf("expected MaxOutputSize=4096, got %d", cfg.SSH.MaxOutputSize)
+	}
+}
+
+func TestValidate_InvalidMaxOutputSize(t *testing.T) {
+	args := Args{
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+	cfg.SSH.MaxOutputSize = -1
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for negative max output size")
+	}
+}
+
+func TestBuildConfig_MaxTunnels(t *testing.T) {
+	args := Args{
+		MaxTunnels:     10,
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+
+	if cfg.SSH.MaxTunnels != 10 {
+		t.Errorf("expected MaxTunnels=10, got %d", cfg.SSH.MaxTunnels)
+	}
+}
+
+func TestValidate_InvalidMaxTunnels(t *testing.T) {
+	args := Args{
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+	cfg.SSH.MaxTunnels = -1
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for negative max tunnels")
+	}
+}

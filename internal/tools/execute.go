@@ -21,10 +21,11 @@ const killGracePeriod = 5 * time.Second
 
 // ExecuteDeps holds dependencies for the ssh_execute tool handler.
 type ExecuteDeps struct {
-	Pool        *connection.Pool
-	Filter      *security.Filter
-	RateLimiter *security.RateLimiter
-	Config      *config.SSHConfig
+	Pool          *connection.Pool
+	Filter        *security.Filter
+	RateLimiter   *security.RateLimiter
+	Config        *config.SSHConfig
+	MaxOutputSize int
 }
 
 // HandleExecute implements the ssh_execute tool.
@@ -149,6 +150,10 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 		stdoutStr = stripansi.Strip(stdoutStr)
 		stderrStr = stripansi.Strip(stderrStr)
 	}
+
+	// Truncate output if configured.
+	stdoutStr = TruncateOutput(stdoutStr, deps.MaxOutputSize)
+	stderrStr = TruncateOutput(stderrStr, deps.MaxOutputSize)
 
 	if timedOut {
 		timeoutMsg := fmt.Sprintf("[TIMEOUT] Command timed out after %s", timeout)

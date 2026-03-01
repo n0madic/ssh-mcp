@@ -16,6 +16,7 @@ import (
 	"github.com/n0madic/ssh-mcp/internal/connection"
 	"github.com/n0madic/ssh-mcp/internal/security"
 	"github.com/n0madic/ssh-mcp/internal/tools"
+	"github.com/n0madic/ssh-mcp/internal/tunnel"
 )
 
 // Server is the SSH MCP server.
@@ -23,6 +24,7 @@ type Server struct {
 	mcpServer   *mcp.Server
 	pool        *connection.Pool
 	termPool    *connection.TerminalPool
+	tunnelPool  *tunnel.TunnelPool
 	auth        *connection.AuthDiscovery
 	filter      *security.Filter
 	rateLimiter *security.RateLimiter
@@ -95,6 +97,7 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		mcpServer:   mcpServer,
 		pool:        pool,
 		termPool:    connection.NewTerminalPool(cfg.SSH.MaxTerminals),
+		tunnelPool:  tunnel.NewTunnelPool(cfg.SSH.MaxTunnels),
 		auth:        auth,
 		filter:      filter,
 		rateLimiter: rateLimiter,
@@ -124,9 +127,10 @@ func (s *Server) registerTools() {
 	}
 	executeDeps := &tools.ExecuteDeps{
 		Pool: s.pool, Filter: s.filter, RateLimiter: s.rateLimiter, Config: &s.cfg.SSH,
+		MaxOutputSize: s.cfg.SSH.MaxOutputSize,
 	}
-	disconnectDeps := &tools.DisconnectDeps{Pool: s.pool}
-	sessionsDeps := &tools.SessionsDeps{Pool: s.pool, TermPool: s.termPool}
+	disconnectDeps := &tools.DisconnectDeps{Pool: s.pool, TunnelPool: s.tunnelPool}
+	sessionsDeps := &tools.SessionsDeps{Pool: s.pool, TermPool: s.termPool, TunnelPool: s.tunnelPool}
 	uploadDeps := &tools.UploadDeps{
 		Pool: s.pool, LocalBaseDir: s.cfg.Security.LocalBaseDir, RateLimiter: fileRateLimiter,
 	}
@@ -309,7 +313,7 @@ func (s *Server) registerTools() {
 			if err != nil {
 				return nil, nil, err
 			}
-			return textResult(out.Text()), nil, nil
+			return textResult(tools.TruncateOutput(out.Text(), s.cfg.SSH.MaxOutputSize)), nil, nil
 		})
 	}
 
@@ -335,10 +339,11 @@ func (s *Server) registerTools() {
 	}
 
 	terminalDeps := &tools.TerminalDeps{
-		Pool:        s.pool,
-		TermPool:    s.termPool,
-		RateLimiter: s.rateLimiter,
-		Config:      &s.cfg.SSH,
+		Pool:          s.pool,
+		TermPool:      s.termPool,
+		RateLimiter:   s.rateLimiter,
+		Config:        &s.cfg.SSH,
+		MaxOutputSize: s.cfg.SSH.MaxOutputSize,
 	}
 
 	// ssh_open_terminal
@@ -418,6 +423,75 @@ func (s *Server) registerTools() {
 			},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHCloseTerminalInput) (*mcp.CallToolResult, any, error) {
 			out, err := tools.HandleCloseTerminal(ctx, terminalDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	tunnelDeps := &tools.TunnelDeps{
+		Pool:        s.pool,
+		TunnelPool:  s.tunnelPool,
+		RateLimiter: s.rateLimiter,
+	}
+
+	// ssh_tunnel_create
+	if !s.isToolDisabled("ssh_tunnel_create") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_tunnel_create",
+			Description: "Create a local port forwarding tunnel (localhost:port → remote:port via SSH). Binds a local port and forwards connections through the SSH session to the specified remote address. Returns the tunnel_id and local address for use.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Tunnel Create",
+				ReadOnlyHint:    false,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  false,
+				OpenWorldHint:   boolPtr(true),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHTunnelCreateInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleTunnelCreate(ctx, tunnelDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_tunnel_list
+	if !s.isToolDisabled("ssh_tunnel_list") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_tunnel_list",
+			Description: "List all active SSH tunnels with their connection details. Optionally filter by session ID.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Tunnel List",
+				ReadOnlyHint:    true,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  true,
+				OpenWorldHint:   boolPtr(false),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHTunnelListInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleTunnelList(ctx, tunnelDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_tunnel_close
+	if !s.isToolDisabled("ssh_tunnel_close") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_tunnel_close",
+			Description: "Close an active SSH tunnel. The tunnel_id will no longer be usable.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Tunnel Close",
+				ReadOnlyHint:    false,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  true,
+				OpenWorldHint:   boolPtr(false),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHTunnelCloseInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleTunnelClose(ctx, tunnelDeps, input)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -546,6 +620,8 @@ func (s *Server) runHTTP(ctx context.Context) error {
 }
 
 func (s *Server) shutdown() {
+	log.Println("Closing all tunnels...")
+	s.tunnelPool.CloseAll()
 	log.Println("Closing all terminal sessions...")
 	s.termPool.CloseAll()
 	log.Println("Closing all SSH connections...")

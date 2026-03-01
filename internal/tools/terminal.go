@@ -31,10 +31,11 @@ var specialKeys = map[string][]byte{
 
 // TerminalDeps holds dependencies for terminal tool handlers.
 type TerminalDeps struct {
-	Pool        *connection.Pool
-	TermPool    *connection.TerminalPool
-	RateLimiter *security.RateLimiter
-	Config      *config.SSHConfig
+	Pool          *connection.Pool
+	TermPool      *connection.TerminalPool
+	RateLimiter   *security.RateLimiter
+	Config        *config.SSHConfig
+	MaxOutputSize int
 }
 
 // HandleOpenTerminal opens a new interactive PTY terminal session.
@@ -80,7 +81,7 @@ func HandleOpenTerminal(ctx context.Context, deps *TerminalDeps, input SSHOpenTe
 	}
 
 	// Wait for initial shell prompt.
-	output := ts.ReadNew(time.Duration(waitMs) * time.Millisecond)
+	output := TruncateOutput(ts.ReadNew(time.Duration(waitMs)*time.Millisecond), deps.MaxOutputSize)
 
 	return &SSHOpenTerminalOutput{
 		TerminalID: string(ts.ID),
@@ -140,7 +141,7 @@ func HandleSendInput(ctx context.Context, deps *TerminalDeps, input SSHSendInput
 		waitMs = 300
 	}
 
-	output := ts.ReadNewSince(startLen, time.Duration(waitMs)*time.Millisecond)
+	output := TruncateOutput(ts.ReadNewSince(startLen, time.Duration(waitMs)*time.Millisecond), deps.MaxOutputSize)
 
 	return &SSHSendInputOutput{
 		Output:  output,
@@ -160,7 +161,7 @@ func HandleReadOutput(ctx context.Context, deps *TerminalDeps, input SSHReadOutp
 	}
 
 	wait := time.Duration(input.WaitMs) * time.Millisecond
-	output := ts.ReadNew(wait)
+	output := TruncateOutput(ts.ReadNew(wait), deps.MaxOutputSize)
 
 	return &SSHReadOutputOutput{
 		Output: output,

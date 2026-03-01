@@ -111,6 +111,7 @@ type SessionInfo struct {
 	Arch         string               `json:"arch,omitempty"`
 	Shell        string               `json:"shell,omitempty"`
 	Terminals    []TerminalInfoOutput `json:"terminals,omitempty"`
+	Tunnels      []TunnelInfoOutput   `json:"tunnels,omitempty"`
 }
 
 // Text returns a human-readable representation of the sessions list.
@@ -139,6 +140,9 @@ func (o SSHListSessionsOutput) Text() string {
 		b.WriteString(line + "\n")
 		for _, t := range s.Terminals {
 			fmt.Fprintf(&b, "    terminal %s — created %s, last used %s\n", t.TerminalID, t.CreatedAt, t.LastUsed)
+		}
+		for _, t := range s.Tunnels {
+			fmt.Fprintf(&b, "    tunnel %s — %s → %s (%d connections)\n", t.TunnelID, t.LocalAddr, t.RemoteAddr, t.ConnCount)
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -357,5 +361,77 @@ type SSHCloseTerminalOutput struct {
 
 // Text returns a human-readable representation of the close terminal result.
 func (o SSHCloseTerminalOutput) Text() string {
+	return o.Message
+}
+
+// SSHTunnelCreateInput is the input for the ssh_tunnel_create tool.
+type SSHTunnelCreateInput struct {
+	SessionID  string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
+	RemoteAddr string `json:"remote_addr" jsonschema:"Remote address to forward to (e.g. localhost:5432, 10.0.0.1:80)"`
+	LocalPort  int    `json:"local_port,omitempty" jsonschema:"Local port to listen on (0 = auto-assign a free port)"`
+}
+
+// SSHTunnelCreateOutput is the output for the ssh_tunnel_create tool.
+type SSHTunnelCreateOutput struct {
+	TunnelID   string `json:"tunnel_id"`
+	LocalAddr  string `json:"local_addr"`
+	LocalPort  int    `json:"local_port"`
+	RemoteAddr string `json:"remote_addr"`
+	Message    string `json:"message"`
+}
+
+// Text returns a human-readable representation of the tunnel create result.
+func (o SSHTunnelCreateOutput) Text() string {
+	return o.Message
+}
+
+// SSHTunnelListInput is the input for the ssh_tunnel_list tool.
+type SSHTunnelListInput struct {
+	SessionID string `json:"session_id,omitempty" jsonschema:"Optional. Filter tunnels by session ID"`
+}
+
+// SSHTunnelListOutput is the output for the ssh_tunnel_list tool.
+type SSHTunnelListOutput struct {
+	Tunnels []TunnelInfoOutput `json:"tunnels"`
+	Count   int                `json:"count"`
+}
+
+// Text returns a human-readable representation of the tunnel list result.
+func (o SSHTunnelListOutput) Text() string {
+	if o.Count == 0 {
+		return "No active tunnels"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Active tunnels (%d):\n", o.Count)
+	for _, t := range o.Tunnels {
+		fmt.Fprintf(&b, "  %s — %s → %s (%d connections, created %s)\n",
+			t.TunnelID, t.LocalAddr, t.RemoteAddr, t.ConnCount, t.CreatedAt)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// TunnelInfoOutput provides information about an active tunnel.
+type TunnelInfoOutput struct {
+	TunnelID   string `json:"tunnel_id"`
+	SessionID  string `json:"session_id"`
+	LocalAddr  string `json:"local_addr"`
+	RemoteAddr string `json:"remote_addr"`
+	ConnCount  int64  `json:"conn_count"`
+	CreatedAt  string `json:"created_at"`
+	LastUsed   string `json:"last_used"`
+}
+
+// SSHTunnelCloseInput is the input for the ssh_tunnel_close tool.
+type SSHTunnelCloseInput struct {
+	TunnelID string `json:"tunnel_id" jsonschema:"Tunnel ID from ssh_tunnel_create"`
+}
+
+// SSHTunnelCloseOutput is the output for the ssh_tunnel_close tool.
+type SSHTunnelCloseOutput struct {
+	Message string `json:"message"`
+}
+
+// Text returns a human-readable representation of the tunnel close result.
+func (o SSHTunnelCloseOutput) Text() string {
 	return o.Message
 }
