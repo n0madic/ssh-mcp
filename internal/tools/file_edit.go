@@ -61,6 +61,9 @@ func HandleEditFile(ctx context.Context, deps *FileEditDeps, input SSHEditFileIn
 }
 
 func editReplace(sc *sftp.Client, input SSHEditFileInput, doBackup bool, maxFileSize int64) (*SSHEditFileOutput, error) {
+	_, statErr := sc.Stat(input.RemotePath)
+	isNewFile := statErr != nil
+
 	if doBackup {
 		if err := createBackup(sc, input.RemotePath, maxFileSize); err != nil {
 			return nil, fmt.Errorf("create backup: %w", err)
@@ -75,9 +78,14 @@ func editReplace(sc *sftp.Client, input SSHEditFileInput, doBackup bool, maxFile
 		return nil, fmt.Errorf("write file: %w", err)
 	}
 
+	message := fmt.Sprintf("Replaced content of %s (%d bytes)", input.RemotePath, n)
+	if isNewFile {
+		message = fmt.Sprintf("Created file %s (%d bytes)", input.RemotePath, n)
+	}
+
 	return &SSHEditFileOutput{
 		BytesWritten: n,
-		Message:      fmt.Sprintf("Replaced content of %s (%d bytes)", input.RemotePath, n),
+		Message:      message,
 	}, nil
 }
 

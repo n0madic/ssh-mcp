@@ -36,21 +36,19 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 		params.KeyPath = input.KeyPath
 	}
 
-	// Resolve from SSH config if requested.
-	if input.UseSSHConfig {
-		resolved := deps.Auth.ResolveHost(params.Host)
-		if params.Host == input.Host { // not overridden by parsing
-			params.Host = resolved.HostName
-		}
-		if input.Port == 0 && resolved.Port != 0 {
-			params.Port = resolved.Port
-		}
-		if input.User == "" && resolved.User != "" {
-			params.User = resolved.User
-		}
-		if input.KeyPath == "" && resolved.IdentityFile != "" {
-			params.KeyPath = resolved.IdentityFile
-		}
+	// Always resolve from SSH config (transparent alias discovery).
+	resolved := deps.Auth.ResolveHost(params.Host)
+	if params.Host == input.Host { // not overridden by parsing
+		params.Host = resolved.HostName
+	}
+	if input.Port == 0 && resolved.Port != 0 {
+		params.Port = resolved.Port
+	}
+	if input.User == "" && resolved.User != "" {
+		params.User = resolved.User
+	}
+	if input.KeyPath == "" && resolved.IdentityFile != "" {
+		params.KeyPath = resolved.IdentityFile
 	}
 
 	// Default user to current OS user.

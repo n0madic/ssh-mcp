@@ -137,12 +137,15 @@ func (s *Server) registerTools() {
 		Pool: s.pool, RateLimiter: fileRateLimiter, MaxFileSize: s.cfg.Security.MaxFileSize,
 	}
 	fileInfoDeps := &tools.FileInfoDeps{Pool: s.pool, RateLimiter: fileRateLimiter}
+	fileReadDeps := &tools.FileReadDeps{
+		Pool: s.pool, RateLimiter: fileRateLimiter, MaxFileSize: s.cfg.Security.MaxFileSize,
+	}
 
 	// ssh_connect
 	if !s.isToolDisabled("ssh_connect") {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
 			Name:        "ssh_connect",
-			Description: "Connect to a remote host via SSH. Only 'host' is required — authentication is automatic (tries SSH keys from ~/.ssh/, ssh-agent, then ~/.ssh/config). Do NOT ask the user for auth details unless connection fails. Returns a session_id for use with other tools.",
+			Description: "Connect to a remote host via SSH. Only 'host' is required — authentication is automatic (tries SSH keys from ~/.ssh/, ssh-agent, then ~/.ssh/config). SSH config aliases (~/.ssh/config) are resolved automatically. Do NOT ask the user for auth details unless connection fails. Returns a session_id for use with other tools.",
 			Annotations: &mcp.ToolAnnotations{
 				Title:           "SSH Connect",
 				ReadOnlyHint:    false,
@@ -272,7 +275,7 @@ func (s *Server) registerTools() {
 	if !s.isToolDisabled("ssh_edit_file") {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
 			Name:        "ssh_edit_file",
-			Description: "Edit a file on a remote host. Supports 'replace' mode (full content replacement) and 'patch' mode (find and replace a string). Creates .bak backup by default.",
+			Description: "Edit a file on a remote host. Supports 'replace' mode (full content replacement or new file creation) and 'patch' mode (find and replace a string). Creates .bak backup by default.",
 			Annotations: &mcp.ToolAnnotations{
 				Title:           "SSH Edit File",
 				ReadOnlyHint:    false,
@@ -303,6 +306,27 @@ func (s *Server) registerTools() {
 			},
 		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHFileInfoInput) (*mcp.CallToolResult, any, error) {
 			out, err := tools.HandleFileInfo(ctx, fileInfoDeps, input)
+			if err != nil {
+				return nil, nil, err
+			}
+			return textResult(out.Text()), nil, nil
+		})
+	}
+
+	// ssh_read_file
+	if !s.isToolDisabled("ssh_read_file") {
+		mcp.AddTool(s.mcpServer, &mcp.Tool{
+			Name:        "ssh_read_file",
+			Description: "Read a file from a remote host with optional line offset and limit. Returns content with line numbers. Supports ~ for home directory.",
+			Annotations: &mcp.ToolAnnotations{
+				Title:           "SSH Read File",
+				ReadOnlyHint:    true,
+				DestructiveHint: boolPtr(false),
+				IdempotentHint:  true,
+				OpenWorldHint:   boolPtr(true),
+			},
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHReadFileInput) (*mcp.CallToolResult, any, error) {
+			out, err := tools.HandleReadFile(ctx, fileReadDeps, input)
 			if err != nil {
 				return nil, nil, err
 			}

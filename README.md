@@ -5,9 +5,9 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 ## Features
 
 - **SSH Connection Pool** — reuses connections, auto-reconnect on failure, idle cleanup, auto-detection of remote OS and shell
-- **Authentication** — SSH keys (auto-discovery), password, `~/.ssh/config` resolution
-- **Command Execution** — with sudo support, working directory, timeout, ANSI stripping
-- **SFTP File Operations** — upload/download files and directories, edit files (replace/patch), file info with directory listing, `~` path expansion
+- **Authentication** — SSH keys (auto-discovery), password, automatic `~/.ssh/config` alias resolution
+- **Command Execution** — with sudo support, working directory, timeout, graceful kill (SIGTERM → SIGKILL), ANSI stripping
+- **SFTP File Operations** — upload/download files and directories, read files with line offset/limit, edit files (replace/patch/create), file info with directory listing, `~` path expansion
 - **Interactive PTY Terminals** — buffered PTY sessions for interactive programs (vim, htop, REPL), dialogs, and real-time output (opt-in with `--enable-terminal`)
 - **Security** — host/command allowlist/denylist (regex + CIDR), per-host rate limiting, path traversal protection, filename length validation
 - **Transports** — stdio (default) and Streamable HTTP (`localhost` only)
@@ -167,19 +167,20 @@ Connect to a remote host via SSH.
 }
 ```
 
-**Resolve from `~/.ssh/config`:**
+**SSH config alias (resolved automatically from `~/.ssh/config`):**
 ```json
 {
-  "host": "my-server",
-  "use_ssh_config": true
+  "host": "my-server"
 }
 ```
+
+SSH config aliases are resolved automatically — no extra flags needed. Explicit parameters (port, user, key_path) override values from the config.
 
 Returns `session_id` for use with other tools. Also auto-detects remote OS, architecture, and shell.
 
 ### ssh_execute
 
-Execute a command on a remote host.
+Execute a command on a remote host. On timeout, sends SIGTERM first (5s grace period) then SIGKILL, and returns partial stdout/stderr with a `[TIMEOUT]` marker in stderr.
 
 ```json
 {
@@ -254,7 +255,7 @@ Download a file or directory from a remote host via SFTP. Automatically detects 
 
 Edit a file on a remote host. Two modes:
 
-**Replace mode** (default) — full content replacement:
+**Replace mode** (default) — full content replacement or new file creation:
 ```json
 {
   "session_id": "admin@example.com:22",
@@ -308,6 +309,39 @@ Get file or directory information (size, permissions, modification time). For di
 ```
 
 Returns file metadata including size, permissions (mode), modification time, and whether it's a directory or symlink. For directories, also returns the list of entries.
+
+### ssh_read_file
+
+Read a file from a remote host with optional line offset and limit. Returns content with line numbers (like `cat -n`). Supports `~` for home directory.
+
+**Read entire file:**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_path": "~/app.log"
+}
+```
+
+**Read with offset and limit (pagination):**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_path": "/var/log/syslog",
+  "offset": 100,
+  "limit": 50
+}
+```
+
+**Read with max file size limit:**
+```json
+{
+  "session_id": "admin@example.com:22",
+  "remote_path": "~/large-file.csv",
+  "max_size": 1048576
+}
+```
+
+Returns file content with line numbers, total line count, file size, and which lines are shown.
 
 ---
 

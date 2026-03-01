@@ -16,6 +16,9 @@ import (
 	"github.com/n0madic/ssh-mcp/internal/security"
 )
 
+// killGracePeriod is the time to wait after SIGTERM before sending SIGKILL.
+const killGracePeriod = 5 * time.Second
+
 // ExecuteDeps holds dependencies for the ssh_execute tool handler.
 type ExecuteDeps struct {
 	Pool        *connection.Pool
@@ -96,11 +99,35 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 	}()
 
 	var exitCode int
+	var timedOut bool
+
 	select {
 	case <-ctx.Done():
-		_ = session.Signal(ssh.SIGKILL)
-		return nil, fmt.Errorf("command timed out after %s", timeout)
+		timedOut = true
+		// Graceful: SIGTERM first (may not be supported, ignore errors).
+		_ = session.Signal(ssh.SIGTERM)
+
+		// Wait grace period for command to exit.
+		graceTimer := time.NewTimer(killGracePeriod)
+		select {
+		case err := <-done:
+			graceTimer.Stop()
+			// Command exited after SIGTERM.
+			if exitErr, ok := err.(interface{ ExitStatus() int }); ok {
+				exitCode = exitErr.ExitStatus()
+			}
+		case <-graceTimer.C:
+			// Grace period expired, SIGKILL.
+			_ = session.Signal(ssh.SIGKILL)
+			select {
+			case <-done:
+			case <-time.After(1 * time.Second):
+			}
+			exitCode = -1
+		}
+
 	case err := <-done:
+		// Normal completion.
 		if err != nil {
 			if exitErr, ok := err.(interface{ ExitStatus() int }); ok {
 				exitCode = exitErr.ExitStatus()
@@ -119,6 +146,18 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 	if deps.Config.StripANSI {
 		stdoutStr = stripansi.Strip(stdoutStr)
 		stderrStr = stripansi.Strip(stderrStr)
+	}
+
+	if timedOut {
+		timeoutMsg := fmt.Sprintf("[TIMEOUT] Command timed out after %s", timeout)
+		if stderrStr != "" {
+			stderrStr = stderrStr + "\n" + timeoutMsg
+		} else {
+			stderrStr = timeoutMsg
+		}
+		if exitCode == 0 {
+			exitCode = -1
+		}
 	}
 
 	return &SSHExecuteOutput{

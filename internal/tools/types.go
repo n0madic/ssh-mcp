@@ -9,12 +9,11 @@ import (
 
 // SSHConnectInput is the input for the ssh_connect tool.
 type SSHConnectInput struct {
-	Host         string `json:"host" jsonschema:"Required. SSH host — hostname, host:port, user@host, or user:password@host:port. This is the only required field, all others are optional and auto-discovered."`
-	Port         int    `json:"port,omitempty" jsonschema:"Optional. SSH port override (default 22)"`
-	User         string `json:"user,omitempty" jsonschema:"Optional. SSH username override (default: current OS user)"`
-	Password     string `json:"password,omitempty" jsonschema:"Optional. SSH password override"`
-	KeyPath      string `json:"key_path,omitempty" jsonschema:"Optional. Path to SSH private key (default: auto-discovered from ~/.ssh/)"`
-	UseSSHConfig bool   `json:"use_ssh_config,omitempty" jsonschema:"Optional. Resolve host alias from ~/.ssh/config"`
+	Host     string `json:"host" jsonschema:"Required. SSH host — hostname, host:port, user@host, or user:password@host:port. This is the only required field, all others are optional and auto-discovered."`
+	Port     int    `json:"port,omitempty" jsonschema:"Optional. SSH port override (default 22)"`
+	User     string `json:"user,omitempty" jsonschema:"Optional. SSH username override (default: current OS user)"`
+	Password string `json:"password,omitempty" jsonschema:"Optional. SSH password override"`
+	KeyPath  string `json:"key_path,omitempty" jsonschema:"Optional. Path to SSH private key (default: auto-discovered from ~/.ssh/)"`
 }
 
 // SSHConnectOutput is the output for the ssh_connect tool.
@@ -246,6 +245,33 @@ func (o SSHFileInfoOutput) Text() string {
 		}
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// SSHReadFileInput is the input for the ssh_read_file tool.
+type SSHReadFileInput struct {
+	SessionID  string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
+	RemotePath string `json:"remote_path" jsonschema:"Remote file path to read"`
+	Offset     int    `json:"offset,omitempty" jsonschema:"Line offset to start reading from (1-based, default 1)"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of lines to return (default 0 = all lines)"`
+	MaxSize    int64  `json:"max_size,omitempty" jsonschema:"Maximum file size in bytes (default from server config, 0=unlimited)"`
+}
+
+// SSHReadFileOutput is the output for the ssh_read_file tool.
+type SSHReadFileOutput struct {
+	Content    string `json:"content"`
+	TotalLines int    `json:"total_lines"`
+	FileSize   int64  `json:"file_size"`
+	FromLine   int    `json:"from_line"`
+	ToLine     int    `json:"to_line"`
+	Message    string `json:"message"`
+}
+
+// Text returns a human-readable representation of the read file result.
+func (o SSHReadFileOutput) Text() string {
+	if o.Content == "" {
+		return o.Message
+	}
+	return o.Message + "\n" + o.Content
 }
 
 // SSHOpenTerminalInput is the input for the ssh_open_terminal tool.
