@@ -53,12 +53,9 @@ func HandleReadFile(ctx context.Context, deps *FileReadDeps, input SSHReadFileIn
 		return nil, fmt.Errorf("read file: %w", err)
 	}
 
-	// Get file size from stat.
-	stat, err := sc.Stat(input.RemotePath)
-	if err != nil {
-		return nil, fmt.Errorf("stat file: %w", err)
-	}
-	fileSize := stat.Size()
+	// File size equals len(data): ReadFile returns the full content on success
+	// (rejects files exceeding maxSize with an error before reading).
+	fileSize := int64(len(data))
 
 	content := string(data)
 
