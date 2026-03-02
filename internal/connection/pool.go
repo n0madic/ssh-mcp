@@ -85,7 +85,8 @@ func (p *Pool) StartIdleCleanup(ctx context.Context) {
 
 func (p *Pool) cleanupIdle() {
 	p.mu.RLock()
-	var toDisconnect []SessionID
+	var toClose []*Connection
+	var toCloseIDs []SessionID
 	for id, conn := range p.conns {
 		// Skip pending connections (not yet ready).
 		select {
@@ -95,15 +96,22 @@ func (p *Pool) cleanupIdle() {
 		}
 		conn.mu.RLock()
 		if conn.Connected && time.Since(conn.LastUsed) > p.cfg.MaxIdleTime {
-			toDisconnect = append(toDisconnect, id)
+			toClose = append(toClose, conn)
+			toCloseIDs = append(toCloseIDs, id)
 		}
 		conn.mu.RUnlock()
 	}
 	p.mu.RUnlock()
 
-	for _, id := range toDisconnect {
-		log.Printf("Closing idle connection: %s", id)
-		p.Disconnect(id)
+	for i, conn := range toClose {
+		log.Printf("Closing idle connection (will reconnect on next use): %s", toCloseIDs[i])
+		conn.mu.Lock()
+		conn.Connected = false
+		if conn.Client != nil {
+			conn.Client.Close()
+			conn.Client = nil
+		}
+		conn.mu.Unlock()
 	}
 }
 
