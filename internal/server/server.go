@@ -121,7 +121,6 @@ func (s *Server) registerTools() {
 	fileEditDeps := &tools.FileEditDeps{
 		Pool: s.pool, RateLimiter: fileRateLimiter, MaxFileSize: s.cfg.Security.MaxFileSize,
 	}
-	fileInfoDeps := &tools.FileInfoDeps{Pool: s.pool, RateLimiter: fileRateLimiter}
 	fileReadDeps := &tools.FileReadDeps{
 		Pool: s.pool, RateLimiter: fileRateLimiter, MaxFileSize: s.cfg.Security.MaxFileSize,
 	}
@@ -274,27 +273,6 @@ func (s *Server) registerTools() {
 				return nil, nil, err
 			}
 			return textResult(out.Text()), nil, nil
-		})
-	}
-
-	// ssh_file_info
-	if !s.isToolDisabled("ssh_file_info") {
-		mcp.AddTool(s.mcpServer, &mcp.Tool{
-			Name:        "ssh_file_info",
-			Description: "Get file or directory information (size, permissions, modification time). For directories, also lists contents unless stat_only is set. Supports ~ for remote home directory.",
-			Annotations: &mcp.ToolAnnotations{
-				Title:           "SSH File Info",
-				ReadOnlyHint:    true,
-				DestructiveHint: boolPtr(false),
-				IdempotentHint:  true,
-				OpenWorldHint:   boolPtr(true),
-			},
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input tools.SSHFileInfoInput) (*mcp.CallToolResult, any, error) {
-			out, err := tools.HandleFileInfo(ctx, fileInfoDeps, input)
-			if err != nil {
-				return nil, nil, err
-			}
-			return textResult(tools.TruncateOutput(out.Text(), s.cfg.SSH.MaxOutputSize)), nil, nil
 		})
 	}
 

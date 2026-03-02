@@ -198,40 +198,6 @@ func TestE2E(t *testing.T) {
 		}
 	})
 
-	t.Run("ListDirectory", func(t *testing.T) {
-		sessionID := sshConnect(t, env)
-
-		text := callTool(t, env, "ssh_file_info", map[string]any{
-			"session_id":  sessionID,
-			"remote_path": "/home/testuser",
-		})
-		t.Logf("List directory response: %s", text)
-
-		if !strings.Contains(text, "test-file.txt") {
-			t.Errorf("expected 'test-file.txt' in listing, got: %s", text)
-		}
-		if !strings.Contains(text, "test-dir") {
-			t.Errorf("expected 'test-dir' in listing, got: %s", text)
-		}
-	})
-
-	t.Run("FileStat", func(t *testing.T) {
-		sessionID := sshConnect(t, env)
-
-		text := callTool(t, env, "ssh_file_info", map[string]any{
-			"session_id":  sessionID,
-			"remote_path": "/home/testuser/test-file.txt",
-		})
-		t.Logf("File stat response: %s", text)
-
-		if !strings.Contains(text, "test-file.txt") {
-			t.Errorf("expected 'test-file.txt' in stat output, got: %s", text)
-		}
-		if !strings.Contains(text, "file:") {
-			t.Errorf("expected 'file:' type in stat output, got: %s", text)
-		}
-	})
-
 	t.Run("SessionReuse", func(t *testing.T) {
 		sessionID1 := sshConnect(t, env)
 		sessionID2 := sshConnect(t, env)

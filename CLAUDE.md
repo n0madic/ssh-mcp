@@ -13,10 +13,10 @@ go vet ./...            # Lint
 
 ## Architecture
 
-SSH MCP Server provides 16 tools to AI agents via the Model Context Protocol:
+SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 
 - **Core**: `ssh_connect`, `ssh_execute`, `ssh_disconnect`, `ssh_list_sessions`
-- **Files**: `ssh_upload`, `ssh_download`, `ssh_read_file`, `ssh_edit_file`, `ssh_file_info`
+- **Files**: `ssh_upload`, `ssh_download`, `ssh_read_file`, `ssh_edit_file`
 - **Terminal**: `ssh_open_terminal`, `ssh_send_input`, `ssh_read_output`, `ssh_close_terminal`
 - **Tunnels**: `ssh_tunnel_create`, `ssh_tunnel_list`, `ssh_tunnel_close`
 
@@ -46,7 +46,7 @@ SSH MCP Server provides 16 tools to AI agents via the Model Context Protocol:
 - **Graceful timeout** — `ssh_execute` sends SIGTERM first, waits 5s grace period, then SIGKILL; returns partial stdout/stderr as result (not error) with `[TIMEOUT]` marker
 - **File read with pagination** — `ssh_read_file` supports line offset/limit for token-efficient reading; formats output with `cat -n` style line numbers
 - **Edit creates files** — `ssh_edit_file` replace mode creates new files if they don't exist; message distinguishes "Created" vs "Replaced"
-- **Output truncation** — `--max-output-size` limits per-stream output in `ssh_execute` (stdout/stderr), terminal handlers, and `ssh_file_info`; applied after ANSI stripping and before timeout markers; `TruncateOutput()` helper in `helpers.go`
+- **Output truncation** — `--max-output-size` limits per-stream output in `ssh_execute` (stdout/stderr) and terminal handlers; applied after ANSI stripping and before timeout markers; `TruncateOutput()` helper in `helpers.go`
 - **SSH tunnels** — local port forwarding via `TunnelPool` in `internal/tunnel`; accept loop goroutine per tunnel; bidirectional `io.Copy` forwarding; tunnels closed on session disconnect and server shutdown
 - **Tunnel pool limit** — `--max-tunnels` caps concurrent tunnels; enforced with pool lock before listener creation
 - **Tunnel auto-cleanup** — `CloseBySession()` called in `HandleDisconnect` before pool disconnect; `CloseAll()` called in server shutdown before terminal/connection cleanup
@@ -141,7 +141,6 @@ sftpClient.Stat(path)      // Follow symlinks
 sftpClient.Lstat(path)     // Don't follow symlinks
 
 // Directory operations
-sshclient.ListDir(sftp, path)                      // List entries
 sshclient.UploadDir(sftp, localDir, remoteDir)     // Recursive upload
 sshclient.DownloadDir(sftp, remoteDir, localDir)   // Recursive download
 
@@ -292,4 +291,4 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 - `ReadFile` supports optional `maxSize` parameter to prevent memory exhaustion
 - `FollowSymlinks` input uses `*bool` to correctly distinguish between "not set" (default true) and "set to false"
 - DRY helper `getConnectionWithRateLimit()` used by all file/dir handlers
-- **Consolidated tools** — `ssh_upload`/`ssh_download` auto-detect file vs directory; `ssh_file_info` combines stat + listing; `ssh_list_sessions` includes terminal and tunnel info
+- **Consolidated tools** — `ssh_upload`/`ssh_download` auto-detect file vs directory; `ssh_list_sessions` includes terminal and tunnel info

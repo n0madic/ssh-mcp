@@ -163,7 +163,6 @@ func TestIsToolDisabled_DirectName(t *testing.T) {
 	}
 }
 
-
 func TestAuthMiddleware_MissingHeader(t *testing.T) {
 	cfg := testConfig()
 	cfg.Transport.HTTPToken = "secret123"

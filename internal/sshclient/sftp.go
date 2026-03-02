@@ -7,22 +7,10 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"time"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
-
-// FileEntry represents a file or directory entry.
-type FileEntry struct {
-	Name      string    `json:"name"`
-	Path      string    `json:"path"`
-	Size      int64     `json:"size"`
-	Mode      string    `json:"mode"`
-	ModTime   time.Time `json:"mod_time"`
-	IsDir     bool      `json:"is_dir"`
-	IsSymlink bool      `json:"is_symlink"`
-}
 
 // NewSFTPClient creates a new SFTP client from an SSH client.
 func NewSFTPClient(client *ssh.Client) (*sftp.Client, error) {
@@ -110,32 +98,6 @@ func DownloadFile(sftpClient *sftp.Client, remotePath, localPath string) (int64,
 	}
 
 	return n, nil
-}
-
-// ListDir lists the contents of a remote directory.
-func ListDir(sftpClient *sftp.Client, dirPath string) ([]FileEntry, error) {
-	entries, err := sftpClient.ReadDir(dirPath)
-	if err != nil {
-		return nil, fmt.Errorf("read remote directory: %w", err)
-	}
-
-	result := make([]FileEntry, 0, len(entries))
-	for _, entry := range entries {
-		fe := FileEntry{
-			Name:    entry.Name(),
-			Path:    path.Join(dirPath, entry.Name()),
-			Size:    entry.Size(),
-			Mode:    entry.Mode().String(),
-			ModTime: entry.ModTime(),
-			IsDir:   entry.IsDir(),
-		}
-		if entry.Mode()&os.ModeSymlink != 0 {
-			fe.IsSymlink = true
-		}
-		result = append(result, fe)
-	}
-
-	return result, nil
 }
 
 // UploadDir recursively uploads a local directory to a remote path, preserving permissions.

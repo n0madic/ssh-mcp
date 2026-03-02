@@ -292,38 +292,6 @@ Edit a file on a remote host. Two modes:
 }
 ```
 
-### ssh_file_info
-
-Get file or directory information (size, permissions, modification time). For directories, also lists contents unless `stat_only` is set. Supports `~` for remote home directory.
-
-**File info:**
-```json
-{
-  "session_id": "admin@example.com:22",
-  "remote_path": "~/config.yaml",
-  "follow_symlinks": true
-}
-```
-
-**Directory listing (default for directories):**
-```json
-{
-  "session_id": "admin@example.com:22",
-  "remote_path": "~/"
-}
-```
-
-**Directory stat only (no listing):**
-```json
-{
-  "session_id": "admin@example.com:22",
-  "remote_path": "~/",
-  "stat_only": true
-}
-```
-
-Returns file metadata including size, permissions (mode), modification time, and whether it's a directory or symlink. For directories, also returns the list of entries.
-
 ### ssh_read_file
 
 Read a file from a remote host with optional line offset and limit. Returns content with line numbers (like `cat -n`). Supports `~` for home directory.
@@ -563,7 +531,7 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 - **Rate limiting** — per-host token bucket rate limiter with automatic stale entry cleanup; optionally applies to SFTP file operations (`--rate-limit-file-ops`)
 - **Connection pool limits** — `--max-connections` caps the number of concurrent SSH connections
 - **File size limits** — `--max-file-size` caps remote file read operations to prevent memory exhaustion
-- **Output truncation** — `--max-output-size` limits per-stream output size in execute, terminal, and file_info tools to prevent LLM context overflow
+- **Output truncation** — `--max-output-size` limits per-stream output size in execute and terminal tools to prevent LLM context overflow
 - **Tunnel pool limits** — `--max-tunnels` caps the number of concurrent SSH tunnels
 - **No credential persistence** — passwords are not stored in the connection pool; only the SSH client config (with key-based auth methods) is retained for auto-reconnect
 - **Remote path expansion** — `~` expands to user's home directory on remote server

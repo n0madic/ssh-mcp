@@ -3,8 +3,6 @@ package tools
 import (
 	"fmt"
 	"strings"
-
-	"github.com/n0madic/ssh-mcp/internal/sshclient"
 )
 
 // SSHConnectInput is the input for the ssh_connect tool.
@@ -206,49 +204,6 @@ type SSHEditFileOutput struct {
 // Text returns a human-readable representation of the edit result.
 func (o SSHEditFileOutput) Text() string {
 	return o.Message
-}
-
-// SSHFileInfoInput is the input for the ssh_file_info tool.
-type SSHFileInfoInput struct {
-	SessionID      string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	RemotePath     string `json:"remote_path" jsonschema:"Remote file or directory path"`
-	FollowSymlinks *bool  `json:"follow_symlinks,omitempty" jsonschema:"Optional. Follow symbolic links (default true)"`
-	StatOnly       *bool  `json:"stat_only,omitempty" jsonschema:"Optional. For directories: return only stat info without listing contents (default false)"`
-}
-
-// SSHFileInfoOutput is the output for the ssh_file_info tool.
-type SSHFileInfoOutput struct {
-	Name      string                `json:"name"`
-	Path      string                `json:"path"`
-	Size      int64                 `json:"size"`
-	Mode      string                `json:"mode"`
-	IsDir     bool                  `json:"is_dir"`
-	IsSymlink bool                  `json:"is_symlink"`
-	ModTime   string                `json:"mod_time"`
-	Entries   []sshclient.FileEntry `json:"entries,omitempty"`
-}
-
-// Text returns a human-readable representation of the file info result.
-func (o SSHFileInfoOutput) Text() string {
-	typeStr := "file"
-	if o.IsDir {
-		typeStr = "directory"
-	} else if o.IsSymlink {
-		typeStr = "symlink"
-	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s: %s, size: %d, mode: %s, modified: %s", typeStr, o.Path, o.Size, o.Mode, o.ModTime)
-	if len(o.Entries) > 0 {
-		fmt.Fprintf(&b, "\n%d entries:\n", len(o.Entries))
-		for _, e := range o.Entries {
-			if e.IsDir {
-				fmt.Fprintf(&b, "  %s  %s/\n", e.Mode, e.Name)
-			} else {
-				fmt.Fprintf(&b, "  %s  %8d  %s\n", e.Mode, e.Size, e.Name)
-			}
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 // SSHReadFileInput is the input for the ssh_read_file tool.
