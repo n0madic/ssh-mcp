@@ -293,4 +293,3 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 - `FollowSymlinks` input uses `*bool` to correctly distinguish between "not set" (default true) and "set to false"
 - DRY helper `getConnectionWithRateLimit()` used by all file/dir handlers
 - **Consolidated tools** — `ssh_upload`/`ssh_download` auto-detect file vs directory; `ssh_file_info` combines stat + listing; `ssh_list_sessions` includes terminal and tunnel info
-- **Tool alias backward compatibility** — `--disable-tools` accepts old names (e.g., `ssh_upload_file` maps to `ssh_upload`) via `toolAliases` map in `server.go`

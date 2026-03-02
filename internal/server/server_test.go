@@ -163,35 +163,6 @@ func TestIsToolDisabled_DirectName(t *testing.T) {
 	}
 }
 
-func TestIsToolDisabled_Aliases(t *testing.T) {
-	cases := []struct {
-		disabled string
-		tool     string
-		want     bool
-	}{
-		{"ssh_upload_file", "ssh_upload", true},
-		{"ssh_upload_directory", "ssh_upload", true},
-		{"ssh_download_file", "ssh_download", true},
-		{"ssh_download_directory", "ssh_download", true},
-		{"ssh_file_stat", "ssh_file_info", true},
-		{"ssh_list_directory", "ssh_file_info", true},
-		{"ssh_upload_file", "ssh_download", false},
-		{"ssh_list_directory", "ssh_upload", false},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.disabled+"->"+tc.tool, func(t *testing.T) {
-			cfg := testConfig()
-			cfg.DisabledTools = []string{tc.disabled}
-			s := &Server{cfg: cfg}
-
-			got := s.isToolDisabled(tc.tool)
-			if got != tc.want {
-				t.Errorf("isToolDisabled(%q) with disabled=%q: got %v, want %v", tc.tool, tc.disabled, got, tc.want)
-			}
-		})
-	}
-}
 
 func TestAuthMiddleware_MissingHeader(t *testing.T) {
 	cfg := testConfig()

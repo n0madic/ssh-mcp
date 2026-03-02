@@ -44,28 +44,9 @@ func textResult(text string) *mcp.CallToolResult {
 	}
 }
 
-// toolAliases maps old tool names to their new consolidated names for backward compatibility.
-var toolAliases = map[string]string{
-	"ssh_upload_file":        "ssh_upload",
-	"ssh_upload_directory":   "ssh_upload",
-	"ssh_download_file":      "ssh_download",
-	"ssh_download_directory": "ssh_download",
-	"ssh_file_stat":          "ssh_file_info",
-	"ssh_list_directory":     "ssh_file_info",
-}
-
-// isToolDisabled checks if a tool is in the disabled list, resolving old aliases.
+// isToolDisabled checks if a tool is in the disabled list.
 func (s *Server) isToolDisabled(toolName string) bool {
-	if slices.Contains(s.cfg.DisabledTools, toolName) {
-		return true
-	}
-	// Check if any disabled old name maps to this tool.
-	for _, disabled := range s.cfg.DisabledTools {
-		if alias, ok := toolAliases[disabled]; ok && alias == toolName {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s.cfg.DisabledTools, toolName)
 }
 
 // New creates and configures a new SSH MCP server.
