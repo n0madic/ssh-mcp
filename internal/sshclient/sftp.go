@@ -253,7 +253,13 @@ func ReadFile(sftpClient *sftp.Client, remotePath string, maxSize ...int64) ([]b
 }
 
 // WriteFile writes data to a remote file with given permissions.
+// Parent directories are created automatically if they don't exist.
 func WriteFile(sftpClient *sftp.Client, remotePath string, data []byte, perms fs.FileMode) (int64, error) {
+	if dir := path.Dir(remotePath); dir != "." && dir != "/" {
+		if err := sftpClient.MkdirAll(dir); err != nil {
+			return 0, fmt.Errorf("create parent directories: %w", err)
+		}
+	}
 	file, err := sftpClient.Create(remotePath)
 	if err != nil {
 		return 0, fmt.Errorf("create remote file: %w", err)
