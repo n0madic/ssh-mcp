@@ -56,6 +56,7 @@ type Args struct {
 	MaxTerminals     int            `arg:"--max-terminals,env:MCP_SSH_MAX_TERMINALS" default:"0" placeholder:"NUM" help:"maximum number of concurrent PTY terminal sessions (0=unlimited)"`
 	MaxOutputSize    int            `arg:"--max-output-size,env:MCP_SSH_MAX_OUTPUT_SIZE" default:"0" placeholder:"BYTES" help:"maximum output size per stream in bytes for execute/terminal results (0=unlimited)"`
 	MaxTunnels       int            `arg:"--max-tunnels,env:MCP_SSH_MAX_TUNNELS" default:"0" placeholder:"NUM" help:"maximum number of concurrent SSH tunnels (0=unlimited)"`
+	EnableTunnels    bool           `arg:"--enable-tunnels,env:MCP_SSH_ENABLE_TUNNELS" help:"allow SSH tunnel creation (ssh_tunnel_create)"`
 	ShowVersion      bool           `arg:"--version" help:"show version and exit"`
 }
 
@@ -93,6 +94,7 @@ type SSHConfig struct {
 	MaxTerminals      int
 	MaxOutputSize     int
 	MaxTunnels        int
+	AllowTunnels      bool
 }
 
 // SecurityConfig holds security-related configuration.
@@ -220,6 +222,7 @@ func buildConfig(args Args) *Config {
 			MaxTerminals:      args.MaxTerminals,
 			MaxOutputSize:     args.MaxOutputSize,
 			MaxTunnels:        args.MaxTunnels,
+		AllowTunnels:      args.EnableTunnels,
 		},
 		Security: SecurityConfig{
 			HostAllowlist:    []string(args.HostAllowlist),

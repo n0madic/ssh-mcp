@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/n0madic/ssh-mcp/internal/config"
 	"github.com/n0madic/ssh-mcp/internal/connection"
 	"github.com/n0madic/ssh-mcp/internal/security"
 )
@@ -34,16 +33,11 @@ type TerminalDeps struct {
 	Pool          *connection.Pool
 	TermPool      *connection.TerminalPool
 	RateLimiter   *security.RateLimiter
-	Config        *config.SSHConfig
 	MaxOutputSize int
 }
 
 // HandleOpenTerminal opens a new interactive PTY terminal session.
 func HandleOpenTerminal(ctx context.Context, deps *TerminalDeps, input SSHOpenTerminalInput) (*SSHOpenTerminalOutput, error) {
-	if !deps.Config.AllowTerminal {
-		return nil, fmt.Errorf("interactive terminal sessions are disabled; start the server with --enable-terminal to allow them")
-	}
-
 	if input.SessionID == "" {
 		return nil, fmt.Errorf("session_id is required")
 	}

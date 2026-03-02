@@ -57,30 +57,12 @@ func TestSpecialKeyLookupInvalid(t *testing.T) {
 	}
 }
 
-// TestHandleOpenTerminalDisabledFlag verifies that HandleOpenTerminal returns an error
-// when AllowTerminal is false (the default).
-func TestHandleOpenTerminalDisabledFlag(t *testing.T) {
-	deps := &TerminalDeps{
-		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
-		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: false},
-	}
-
-	_, err := HandleOpenTerminal(context.Background(), deps, SSHOpenTerminalInput{
-		SessionID: "user@host:22",
-	})
-	if err == nil {
-		t.Fatal("expected error when AllowTerminal=false, got nil")
-	}
-}
-
 // TestHandleOpenTerminalMissingSession verifies that HandleOpenTerminal returns an error
 // when session_id is empty.
 func TestHandleOpenTerminalMissingSession(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleOpenTerminal(context.Background(), deps, SSHOpenTerminalInput{})
@@ -95,7 +77,6 @@ func TestHandleSendInputMissingTerminal(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleSendInput(context.Background(), deps, SSHSendInputInput{
@@ -116,7 +97,6 @@ func TestHandleSendInputUnknownSpecialKey(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: tp,
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleSendInput(context.Background(), deps, SSHSendInputInput{
@@ -138,7 +118,6 @@ func TestHandleSendInputRequiresTextOrKey(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleSendInput(context.Background(), deps, SSHSendInputInput{
@@ -155,7 +134,6 @@ func TestHandleSendInputBothTextAndKey(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleSendInput(context.Background(), deps, SSHSendInputInput{
@@ -176,7 +154,6 @@ func TestHandleReadOutputMissingTerminal(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleReadOutput(context.Background(), deps, SSHReadOutputInput{
@@ -212,7 +189,6 @@ func TestHandleCloseTerminalMissing(t *testing.T) {
 	deps := &TerminalDeps{
 		Pool:     connection.NewPool(&config.SSHConfig{}, nil),
 		TermPool: connection.NewTerminalPool(0),
-		Config:   &config.SSHConfig{AllowTerminal: true},
 	}
 
 	_, err := HandleCloseTerminal(context.Background(), deps, SSHCloseTerminalInput{

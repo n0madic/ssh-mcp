@@ -74,11 +74,16 @@ func New(ctx context.Context, cfg *config.Config) (*Server, error) {
 		nil,
 	)
 
+	var tunnelPool *tunnel.TunnelPool
+	if cfg.SSH.AllowTunnels {
+		tunnelPool = tunnel.NewTunnelPool(cfg.SSH.MaxTunnels)
+	}
+
 	s := &Server{
 		mcpServer:   mcpServer,
 		pool:        pool,
 		termPool:    connection.NewTerminalPool(cfg.SSH.MaxTerminals),
-		tunnelPool:  tunnel.NewTunnelPool(cfg.SSH.MaxTunnels),
+		tunnelPool:  tunnelPool,
 		auth:        auth,
 		filter:      filter,
 		rateLimiter: rateLimiter,
@@ -297,11 +302,11 @@ func (s *Server) registerTools() {
 		})
 	}
 
+	if s.cfg.SSH.AllowTerminal {
 	terminalDeps := &tools.TerminalDeps{
 		Pool:          s.pool,
 		TermPool:      s.termPool,
 		RateLimiter:   s.rateLimiter,
-		Config:        &s.cfg.SSH,
 		MaxOutputSize: s.cfg.SSH.MaxOutputSize,
 	}
 
@@ -309,7 +314,7 @@ func (s *Server) registerTools() {
 	if !s.isToolDisabled("ssh_open_terminal") {
 		mcp.AddTool(s.mcpServer, &mcp.Tool{
 			Name:        "ssh_open_terminal",
-			Description: "Open an interactive PTY terminal session over SSH. Returns a terminal_id for use with ssh_send_input, ssh_read_output, and ssh_close_terminal. Requires --enable-terminal flag.",
+			Description: "Open an interactive PTY terminal session over SSH. Returns a terminal_id for use with ssh_send_input, ssh_read_output, and ssh_close_terminal.",
 			Annotations: &mcp.ToolAnnotations{
 				Title:           "SSH Open Terminal",
 				ReadOnlyHint:    false,
@@ -388,7 +393,9 @@ func (s *Server) registerTools() {
 			return textResult(out.Text()), nil, nil
 		})
 	}
+	} // AllowTerminal
 
+	if s.cfg.SSH.AllowTunnels {
 	tunnelDeps := &tools.TunnelDeps{
 		Pool:        s.pool,
 		TunnelPool:  s.tunnelPool,
@@ -457,6 +464,7 @@ func (s *Server) registerTools() {
 			return textResult(out.Text()), nil, nil
 		})
 	}
+	} // AllowTunnels
 }
 
 // authMiddleware wraps an HTTP handler with bearer token authentication.
@@ -579,8 +587,10 @@ func (s *Server) runHTTP(ctx context.Context) error {
 }
 
 func (s *Server) shutdown() {
-	log.Println("Closing all tunnels...")
-	s.tunnelPool.CloseAll()
+	if s.tunnelPool != nil {
+		log.Println("Closing all tunnels...")
+		s.tunnelPool.CloseAll()
+	}
 	log.Println("Closing all terminal sessions...")
 	s.termPool.CloseAll()
 	log.Println("Closing all SSH connections...")

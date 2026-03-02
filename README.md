@@ -9,7 +9,7 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 - **Command Execution** — with sudo support, working directory, timeout, graceful kill (SIGTERM → SIGKILL), ANSI stripping
 - **SFTP File Operations** — upload/download files and directories, read files with line offset/limit, edit files (replace/patch/create), file info with directory listing, `~` path expansion
 - **Interactive PTY Terminals** — buffered PTY sessions for interactive programs (vim, htop, REPL), dialogs, and real-time output (opt-in with `--enable-terminal`)
-- **SSH Tunnels** — local port forwarding (localhost:port → remote:port via SSH) for accessing remote services like databases, APIs, and web servers
+- **SSH Tunnels** — local port forwarding (localhost:port → remote:port via SSH) for accessing remote services like databases, APIs, and web servers (opt-in with `--enable-tunnels`)
 - **Output Truncation** — configurable per-stream output size limit (`--max-output-size`) to prevent LLM context overflow
 - **Security** — host/command allowlist/denylist (regex + CIDR), per-host rate limiting, path traversal protection, filename length validation
 - **Transports** — stdio (default) and Streamable HTTP (`localhost` only)
@@ -83,6 +83,7 @@ go build -o ssh-mcp .
 | `--enable-terminal` | `MCP_SSH_ENABLE_TERMINAL` | `false` | Allow interactive PTY terminal sessions (`ssh_open_terminal`) |
 | `--max-terminals` | `MCP_SSH_MAX_TERMINALS` | `0` | Maximum concurrent PTY terminal sessions (0=unlimited) |
 | `--max-output-size` | `MCP_SSH_MAX_OUTPUT_SIZE` | `0` | Maximum output size per stream in bytes for execute/terminal results (0=unlimited) |
+| `--enable-tunnels` | `MCP_SSH_ENABLE_TUNNELS` | `false` | Allow SSH tunnel creation (`ssh_tunnel_create`) |
 | `--max-tunnels` | `MCP_SSH_MAX_TUNNELS` | `0` | Maximum concurrent SSH tunnels (0=unlimited) |
 | `--version` | — | — | Show version and exit |
 
@@ -410,7 +411,7 @@ Close a PTY terminal session.
 
 ## SSH Tunnel Tools
 
-These three tools provide local port forwarding through SSH connections. Useful for accessing remote databases, web servers, or APIs that aren't directly reachable.
+These three tools provide local port forwarding through SSH connections. Useful for accessing remote databases, web servers, or APIs that aren't directly reachable. Requires `--enable-tunnels`.
 
 **Typical workflow:**
 
@@ -523,6 +524,7 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 - **Host key verification** — enabled by default using `~/.ssh/known_hosts`; fails with a clear error if the file is missing (no silent downgrade to insecure mode)
 - **Sudo disabled by default** — must be explicitly enabled with `--enable-sudo`
 - **Interactive terminals disabled by default** — PTY sessions bypass the command filter; must be explicitly enabled with `--enable-terminal`
+- **SSH tunnels disabled by default** — tunnel creation must be explicitly enabled with `--enable-tunnels`
 - **Host filtering** — allowlist/denylist with regex and CIDR support; denylist takes priority; regex patterns are auto-anchored for full-string matching; CIDR patterns (e.g., `10.0.0.0/8`) match by IP range
 - **Command filtering** — allowlist/denylist with regex support; denylist takes priority; patterns are auto-anchored; filter runs on the final command (after cd/sudo prepend)
 - **Local path restriction** — `--local-base-dir` restricts all local file operations (upload/download) to a specific directory

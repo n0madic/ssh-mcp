@@ -387,6 +387,19 @@ func TestBuildConfig_MaxTunnels(t *testing.T) {
 	}
 }
 
+func TestBuildConfig_EnableTunnels(t *testing.T) {
+	args := Args{
+		EnableTunnels:  true,
+		HTTPPort:       8081,
+		CommandTimeout: 60 * time.Second,
+		RateLimit:      60,
+	}
+	cfg := buildConfig(args)
+	if !cfg.SSH.AllowTunnels {
+		t.Error("expected AllowTunnels=true")
+	}
+}
+
 func TestValidate_InvalidMaxTunnels(t *testing.T) {
 	args := Args{
 		HTTPPort:       8081,
