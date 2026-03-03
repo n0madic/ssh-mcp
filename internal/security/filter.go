@@ -80,7 +80,7 @@ func (f *Filter) AllowHost(host string) error {
 
 	for _, m := range f.hostDenylist {
 		if m.match(host) {
-			return fmt.Errorf("host %q is denied by denylist pattern %q", host, m.String())
+			return fmt.Errorf("host %q is denied by security policy", host)
 		}
 	}
 
@@ -108,8 +108,8 @@ func compileHostPatterns(patterns []string) ([]hostMatcher, error) {
 				continue
 			}
 		}
-		// Fall through to regex.
-		re, err := compileAnchoredRegex(p)
+		// Fall through to regex with case-insensitive matching for hostnames.
+		re, err := compileAnchoredRegex("(?i)" + p)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +123,7 @@ func compileHostPatterns(patterns []string) ([]hostMatcher, error) {
 func (f *Filter) AllowCommand(cmd string) error {
 	for _, re := range f.cmdDenylist {
 		if re.MatchString(cmd) {
-			return fmt.Errorf("command is denied by denylist pattern %q", re.String())
+			return fmt.Errorf("command is denied by security policy")
 		}
 	}
 
@@ -152,14 +152,9 @@ func compilePatterns(patterns []string) ([]*regexp.Regexp, error) {
 }
 
 // compileAnchoredRegex compiles a regex pattern with auto-anchoring for full-string matching.
+// Uses non-capturing group to safely wrap the pattern before anchoring.
 func compileAnchoredRegex(p string) (*regexp.Regexp, error) {
-	anchored := p
-	if !strings.HasPrefix(anchored, "^") {
-		anchored = "^" + anchored
-	}
-	if !strings.HasSuffix(anchored, "$") {
-		anchored = anchored + "$"
-	}
+	anchored := "^(?:" + p + ")$"
 	re, err := regexp.Compile(anchored)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regex pattern %q: %w", p, err)

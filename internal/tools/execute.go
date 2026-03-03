@@ -74,13 +74,20 @@ func HandleExecute(ctx context.Context, deps *ExecuteDeps, input SSHExecuteInput
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// Get SSH client under lock.
+	client, err := conn.GetClient()
+	if err != nil {
+		return nil, err
+	}
+
 	// Create SSH session.
-	conn.IncrementCommandCount()
-	session, err := conn.Client.NewSession()
+	session, err := client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
 	defer session.Close()
+
+	conn.IncrementCommandCount()
 
 	// Set up stdin for sudo password.
 	if input.Sudo && input.SudoPassword != "" {

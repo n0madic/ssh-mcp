@@ -1,7 +1,9 @@
 package connection
 
 import (
+	"errors"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -165,6 +167,10 @@ func (a *AuthDiscovery) loadKeyAuth(keyPath string) ssh.AuthMethod {
 
 	signer, err := ssh.ParsePrivateKey(keyData)
 	if err != nil {
+		var missingErr *ssh.PassphraseMissingError
+		if errors.As(err, &missingErr) {
+			log.Printf("SSH key %s is passphrase-protected (not supported)", keyPath)
+		}
 		return nil
 	}
 

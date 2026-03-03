@@ -27,8 +27,8 @@ func detectRemoteInfo(ctx context.Context, client *ssh.Client) RemoteInfo {
 	defer cancel()
 
 	// Try POSIX probe first (Linux/macOS/FreeBSD).
-	output, err := runProbeCommand(ctx, client, "uname -s; uname -m; echo $SHELL")
-	if err == nil {
+	output, posixErr := runProbeCommand(ctx, client, "uname -s; uname -m; echo $SHELL")
+	if posixErr == nil {
 		info := parseDetectionOutput(output)
 		if info.OS != "" {
 			return info
@@ -36,16 +36,16 @@ func detectRemoteInfo(ctx context.Context, client *ssh.Client) RemoteInfo {
 	}
 
 	// Fallback: try Windows detection.
-	output, err = runProbeCommand(ctx, client, "echo %OS%; echo %PROCESSOR_ARCHITECTURE%; echo %COMSPEC%")
-	if err == nil {
+	output, winErr := runProbeCommand(ctx, client, "echo %OS%; echo %PROCESSOR_ARCHITECTURE%; echo %COMSPEC%")
+	if winErr == nil {
 		info := parseWindowsDetectionOutput(output)
 		if info.OS != "" {
 			return info
 		}
 	}
 
-	if err != nil {
-		log.Printf("Remote info detection failed: %v", err)
+	if posixErr != nil || winErr != nil {
+		log.Printf("Remote info detection failed: POSIX=%v, Windows=%v", posixErr, winErr)
 	}
 
 	return RemoteInfo{}

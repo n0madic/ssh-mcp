@@ -26,12 +26,12 @@ func HandleEditFile(ctx context.Context, deps *FileEditDeps, input SSHEditFileIn
 		return nil, fmt.Errorf("invalid remote path: %w", err)
 	}
 
-	conn, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
+	_, client, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	sc, err := sshclient.NewSFTPClient(conn.Client)
+	sc, err := sshclient.NewSFTPClient(client)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,10 @@ func HandleEditFile(ctx context.Context, deps *FileEditDeps, input SSHEditFileIn
 
 func editReplace(sc *sftp.Client, input SSHEditFileInput, doBackup bool, maxFileSize int64) (*SSHEditFileOutput, error) {
 	_, statErr := sc.Stat(input.RemotePath)
-	isNewFile := statErr != nil
+	if statErr != nil && !os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("stat remote file: %w", statErr)
+	}
+	isNewFile := os.IsNotExist(statErr)
 
 	if doBackup {
 		if err := createBackup(sc, input.RemotePath, maxFileSize); err != nil {
@@ -107,7 +110,8 @@ func editPatch(sc *sftp.Client, deps *FileEditDeps, input SSHEditFileInput, doBa
 	newContent := strings.Replace(content, input.OldString, input.NewString, 1)
 
 	if doBackup {
-		if err := createBackup(sc, input.RemotePath, deps.MaxFileSize); err != nil {
+		perms := defaultPerms(sc, input.RemotePath)
+		if _, err := sshclient.WriteFile(sc, input.RemotePath+".bak", data, perms); err != nil {
 			return nil, fmt.Errorf("create backup: %w", err)
 		}
 	}

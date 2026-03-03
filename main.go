@@ -38,6 +38,5 @@ func main() {
 
 	if err := srv.Run(ctx); err != nil {
 		log.Fatalf("Server error: %v", err)
-		os.Exit(1)
 	}
 }

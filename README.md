@@ -520,20 +520,21 @@ Then configure Claude Desktop to use the HTTP endpoint at `http://localhost:8081
 ## Security
 
 - **HTTP transport is localhost-only** — the HTTP server binds to `localhost` (hardcoded, not configurable)
-- **HTTP authentication** — optional bearer token authentication for HTTP transport (`--http-token`)
+- **HTTP authentication** — optional bearer token authentication for HTTP transport (`--http-token`); constant-time comparison
+- **HTTP server hardening** — `ReadHeaderTimeout` and `IdleTimeout` set to prevent slowloris-style attacks
 - **Host key verification** — enabled by default using `~/.ssh/known_hosts`; fails with a clear error if the file is missing (no silent downgrade to insecure mode)
 - **Sudo disabled by default** — must be explicitly enabled with `--enable-sudo`
 - **Interactive terminals disabled by default** — PTY sessions bypass the command filter; must be explicitly enabled with `--enable-terminal`
 - **SSH tunnels disabled by default** — tunnel creation must be explicitly enabled with `--enable-tunnels`
-- **Host filtering** — allowlist/denylist with regex and CIDR support; denylist takes priority; regex patterns are auto-anchored for full-string matching; CIDR patterns (e.g., `10.0.0.0/8`) match by IP range
-- **Command filtering** — allowlist/denylist with regex support; denylist takes priority; patterns are auto-anchored; filter runs on the final command (after cd/sudo prepend)
+- **Host filtering** — allowlist/denylist with regex and CIDR support; denylist takes priority; regex patterns are auto-anchored for full-string matching; CIDR patterns (e.g., `10.0.0.0/8`) match by IP range; case-insensitive host matching
+- **Command filtering** — allowlist/denylist with regex support; denylist takes priority; patterns are auto-anchored; filter runs on the original command (before cd/sudo prepend); error messages do not expose filter patterns
 - **Local path restriction** — `--local-base-dir` restricts all local file operations (upload/download) to a specific directory
-- **Path traversal protection** — rejects paths containing `..` or null bytes (both local and remote)
-- **Filename validation** — rejects filenames longer than 255 characters, containing control characters, or path separators
+- **Path traversal protection** — rejects paths with `..` path segments or null bytes (both local and remote); segment-based check allows names like `foo..bar`
+- **Filename validation** — rejects filenames longer than 255 characters, containing control characters (including DEL and Unicode Cc), or path separators
 - **Rate limiting** — per-host token bucket rate limiter with automatic stale entry cleanup; optionally applies to SFTP file operations (`--rate-limit-file-ops`)
 - **Connection pool limits** — `--max-connections` caps the number of concurrent SSH connections
 - **File size limits** — `--max-file-size` caps remote file read operations to prevent memory exhaustion
-- **Output truncation** — `--max-output-size` limits per-stream output size in execute and terminal tools to prevent LLM context overflow
+- **Output truncation** — `--max-output-size` limits per-stream output size in execute and terminal tools to prevent LLM context overflow; UTF-8-safe truncation avoids splitting multi-byte characters
 - **Tunnel pool limits** — `--max-tunnels` caps the number of concurrent SSH tunnels
 - **No credential persistence** — passwords are not stored in the connection pool; only the SSH client config (with key-based auth methods) is retained for auto-reconnect
 - **Remote path expansion** — `~` expands to user's home directory on remote server

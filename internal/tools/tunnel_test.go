@@ -38,6 +38,22 @@ func TestHandleTunnelCreate_MissingRemoteAddr(t *testing.T) {
 	}
 }
 
+func TestHandleTunnelCreate_InvalidRemoteAddr(t *testing.T) {
+	deps := &TunnelDeps{
+		TunnelPool: tunnel.NewTunnelPool(0),
+	}
+	_, err := HandleTunnelCreate(context.Background(), deps, SSHTunnelCreateInput{
+		SessionID:  "user@host:22",
+		RemoteAddr: "not-a-host-port",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid remote_addr format")
+	}
+	if !strings.Contains(err.Error(), "invalid remote_addr") {
+		t.Errorf("expected error about invalid remote_addr, got: %v", err)
+	}
+}
+
 func TestHandleTunnelClose_MissingTunnelID(t *testing.T) {
 	deps := &TunnelDeps{
 		TunnelPool: tunnel.NewTunnelPool(0),

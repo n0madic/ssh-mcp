@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/n0madic/ssh-mcp/internal/connection"
 	"github.com/n0madic/ssh-mcp/internal/security"
@@ -24,13 +25,16 @@ func HandleTunnelCreate(ctx context.Context, deps *TunnelDeps, input SSHTunnelCr
 	if input.RemoteAddr == "" {
 		return nil, fmt.Errorf("remote_addr is required")
 	}
+	if _, _, err := net.SplitHostPort(input.RemoteAddr); err != nil {
+		return nil, fmt.Errorf("invalid remote_addr %q: must be host:port format", input.RemoteAddr)
+	}
 
-	conn, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
+	_, client, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	ts, err := deps.TunnelPool.Open(input.SessionID, conn.Client, input.LocalPort, input.RemoteAddr)
+	ts, err := deps.TunnelPool.Open(input.SessionID, client, input.LocalPort, input.RemoteAddr)
 	if err != nil {
 		return nil, fmt.Errorf("create tunnel: %w", err)
 	}

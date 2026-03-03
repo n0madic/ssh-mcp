@@ -23,16 +23,19 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 ### Key Design Decisions
 
 - **SessionID = `user@host:port`** — reconnecting to the same host reuses the connection
-- **Auto-reconnect** — transparent reconnection when a connection drops
+- **Auto-reconnect** — transparent reconnection when a connection drops; serialized per-connection via `reconnectMu`
 - **SFTP per-operation** — SFTP clients are created and closed per-operation to avoid holding channels
 - **Security pipeline** — every handler: rate limit → host/command filter → path check → local path validation → execute
 - **HTTP localhost only** — hardcoded, not configurable
-- **HTTP bearer auth** — optional `--http-token` for HTTP transport authentication
+- **HTTP bearer auth** — optional `--http-token` for HTTP transport authentication; constant-time comparison via `crypto/subtle`
+- **HTTP timeouts** — `ReadHeaderTimeout: 10s`, `IdleTimeout: 120s` (no Read/WriteTimeout to avoid breaking SSE streaming)
 - **Local path restriction** — `--local-base-dir` restricts upload/download local paths
 - **No credential persistence** — passwords are not stored in the connection pool; only `ssh.ClientConfig` is retained for auto-reconnect
-- **Auto-anchored filters** — regex patterns are auto-anchored with `^`/`$` for full-string matching
+- **Config validation** — `Parse()` calls `Validate()` after building config; all constraints (ports, timeouts, limits) checked before server start
+- **GetClient() method** — thread-safe access to `conn.Client` via `Connection.GetClient()` with read lock; prevents race with idle cleanup
+- **Auto-anchored filters** — regex patterns are auto-anchored with `^(?:...)`/`$` for safe full-string matching
 - **CIDR host filtering** — host patterns support CIDR notation (e.g., `10.0.0.0/8`) alongside regex; auto-detected
-- **Filename validation** — `ValidateFilename()` rejects names >255 chars, control characters, path separators
+- **Filename validation** — `ValidateFilename()` rejects names >255 chars, control characters (including DEL 0x7F and Unicode Cc), path separators
 - **Sudo disabled by default** — requires `--enable-sudo`
 - **File permissions preserved** — rwx bits are read from source and applied to destination
 - **Remote path expansion** — `~` and relative paths expanded via `sftp.RealPath()` server-side
@@ -46,10 +49,16 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **Graceful timeout** — `ssh_execute` sends SIGTERM first, waits 5s grace period, then SIGKILL; returns partial stdout/stderr as result (not error) with `[TIMEOUT]` marker
 - **File read with pagination** — `ssh_read_file` supports line offset/limit for token-efficient reading; formats output with `cat -n` style line numbers
 - **Edit creates files** — `ssh_edit_file` replace mode creates new files if they don't exist; message distinguishes "Created" vs "Replaced"
-- **Output truncation** — `--max-output-size` limits per-stream output in `ssh_execute` (stdout/stderr) and terminal handlers; applied after ANSI stripping and before timeout markers; `TruncateOutput()` helper in `helpers.go`
+- **Output truncation** — `--max-output-size` limits per-stream output in `ssh_execute` (stdout/stderr) and terminal handlers; applied after ANSI stripping and before timeout markers; `TruncateOutput()` helper in `helpers.go` with UTF-8-safe boundary handling
 - **SSH tunnels** — local port forwarding via `TunnelPool` in `internal/tunnel`; accept loop goroutine per tunnel; bidirectional `io.Copy` forwarding; tunnels closed on session disconnect and server shutdown
 - **Tunnel pool limit** — `--max-tunnels` caps concurrent tunnels; enforced with pool lock before listener creation
 - **Tunnel auto-cleanup** — `CloseBySession()` called in `HandleDisconnect` before pool disconnect; `CloseAll()` called in server shutdown before terminal/connection cleanup
+- **Terminal auto-cleanup** — `TermPool.CloseBySession()` called in `HandleDisconnect` before tunnel cleanup; terminals closed before tunnels before connection pool disconnect
+- **Case-insensitive host patterns** — host regex patterns compiled with `(?i)` prefix for RFC 4343 compliance
+- **Segment-based traversal check** — `containsTraversal()` checks for `..` as path segments, not substrings; allows legitimate names like `foo..bar`
+- **SanitizePath base check** — absolute paths are also validated against base directory (not just relative paths)
+- **Active connection counting** — `MaxConnections` counts only `Connected == true` entries, not idle placeholder records
+- **isAlive timeout** — keepalive probe has 5s timeout to avoid blocking on hung connections
 
 ### Package Structure
 
@@ -277,7 +286,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ssh_connec
 - Path traversal protection checks for `..` and null bytes in raw paths **before** cleaning
 - Local path validation via `ValidateLocalPath()` enforces `--local-base-dir` containment
 - Host/command filters use denylist-first priority with auto-anchored regex patterns (`^`/`$`) and optional CIDR matching
-- `ValidateFilename()` rejects filenames >255 chars, control characters (0x00-0x1F), path separators, and `..`
+- `ValidateFilename()` rejects filenames >255 chars, control characters (0x00-0x1F, 0x7F, Unicode Cc), path separators, and `..`
 - `ValidatePath()` calls `ValidateFilename()` on the base name, so all callers get filename validation automatically
 - Command filter runs on the **original** command (before cd/sudo prepend), matching the user's intent rather than internal wrappers
 - Rate limiter uses per-host token buckets with periodic cleanup of stale entries

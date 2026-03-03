@@ -420,15 +420,23 @@ func (tp *TerminalPool) Get(id TerminalID) (*TerminalSession, error) {
 }
 
 // closeSession closes a terminal session's resources and signals done.
+// The mutex is released before blocking I/O to avoid holding it during Close().
 func closeSession(ts *TerminalSession) {
 	ts.mu.Lock()
-	defer ts.mu.Unlock()
-	ts.closed = true
-	if ts.stdin != nil {
-		ts.stdin.Close()
+	if ts.closed {
+		ts.mu.Unlock()
+		return
 	}
-	if ts.sshSession != nil {
-		ts.sshSession.Close()
+	ts.closed = true
+	stdin := ts.stdin
+	sshSess := ts.sshSession
+	ts.mu.Unlock()
+
+	if stdin != nil {
+		stdin.Close()
+	}
+	if sshSess != nil {
+		sshSess.Close()
 	}
 	ts.signalDone()
 }

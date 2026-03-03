@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/user"
 
 	"github.com/n0madic/ssh-mcp/internal/connection"
 	"github.com/n0madic/ssh-mcp/internal/security"
@@ -24,6 +25,9 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 
 	// Override with explicit parameters.
 	if input.Port > 0 {
+		if input.Port > 65535 {
+			return nil, fmt.Errorf("invalid port: %d (must be 1-65535)", input.Port)
+		}
 		params.Port = input.Port
 	}
 	if input.User != "" {
@@ -37,8 +41,9 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 	}
 
 	// Always resolve from SSH config (transparent alias discovery).
-	resolved := deps.Auth.ResolveHost(params.Host)
-	if params.Host == input.Host { // not overridden by parsing
+	parsedHost := params.Host // host after ParseHostString (without user@/:port)
+	resolved := deps.Auth.ResolveHost(parsedHost)
+	if params.Host == parsedHost { // not overridden by explicit input
 		params.Host = resolved.HostName
 	}
 	if input.Port == 0 && resolved.Port != 0 {
@@ -53,7 +58,9 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 
 	// Default user to current OS user.
 	if params.User == "" {
-		if u := os.Getenv("USER"); u != "" {
+		if currentUser, err := user.Current(); err == nil && currentUser.Username != "" {
+			params.User = currentUser.Username
+		} else if u := os.Getenv("USER"); u != "" {
 			params.User = u
 		} else if u := os.Getenv("USERNAME"); u != "" {
 			params.User = u

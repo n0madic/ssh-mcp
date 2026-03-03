@@ -11,12 +11,18 @@ import (
 // DisconnectDeps holds dependencies for the ssh_disconnect tool handler.
 type DisconnectDeps struct {
 	Pool       *connection.Pool
+	TermPool   *connection.TerminalPool
 	TunnelPool *tunnel.TunnelPool
 }
 
 // HandleDisconnect implements the ssh_disconnect tool.
 func HandleDisconnect(_ context.Context, deps *DisconnectDeps, input SSHDisconnectInput) (*SSHDisconnectOutput, error) {
 	sessionID := connection.SessionID(input.SessionID)
+
+	// Close all terminals for this session before disconnecting.
+	if deps.TermPool != nil {
+		deps.TermPool.CloseBySession(connection.SessionID(input.SessionID))
+	}
 
 	// Close all tunnels for this session before disconnecting.
 	if deps.TunnelPool != nil {

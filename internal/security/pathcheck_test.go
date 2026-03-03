@@ -37,12 +37,29 @@ func TestValidatePath_Traversal(t *testing.T) {
 }
 
 func TestSanitizePath_Absolute(t *testing.T) {
-	result, err := SanitizePath("/base", "/absolute/path")
+	// Absolute path within base should succeed.
+	result, err := SanitizePath("/base", "/base/subdir/file.txt")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != "/base/subdir/file.txt" {
+		t.Errorf("expected /base/subdir/file.txt, got %s", result)
+	}
+
+	// Absolute path with empty base should succeed.
+	result, err = SanitizePath("", "/absolute/path")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if result != "/absolute/path" {
 		t.Errorf("expected /absolute/path, got %s", result)
+	}
+}
+
+func TestSanitizePath_AbsoluteEscapesBase(t *testing.T) {
+	_, err := SanitizePath("/base", "/absolute/path")
+	if err == nil {
+		t.Error("expected error for absolute path escaping base directory")
 	}
 }
 
@@ -163,6 +180,7 @@ func TestValidateFilename_Valid(t *testing.T) {
 		"a",
 		strings.Repeat("x", MaxFilenameLength), // exactly 255 chars
 		"日本語ファイル.txt",
+		"foo..bar", // double dots in middle of name are OK (not traversal)
 	}
 
 	for _, name := range tests {
@@ -298,5 +316,52 @@ func TestValidateLocalPath_NonExistentPath(t *testing.T) {
 	newFileUnderSymlink := filepath.Join(symlinkDir, "newfile.txt")
 	if err := ValidateLocalPath(newFileUnderSymlink, safeDir); err == nil {
 		t.Error("expected ValidateLocalPath to reject non-existent path under symlinked parent that escapes base")
+	}
+}
+
+func TestValidatePath_Empty(t *testing.T) {
+	if err := ValidatePath(""); err == nil {
+		t.Error("expected error for empty path")
+	}
+}
+
+func TestValidateFilename_DEL(t *testing.T) {
+	if err := ValidateFilename("file\x7f.txt"); err == nil {
+		t.Error("expected error for filename with DEL character")
+	}
+}
+
+func TestValidateFilename_UnicodeControl(t *testing.T) {
+	// U+0085 NEXT LINE is a Unicode control character.
+	if err := ValidateFilename("file\u0085.txt"); err == nil {
+		t.Error("expected error for filename with Unicode control character")
+	}
+}
+
+func TestValidatePath_DoubleDotInFilename(t *testing.T) {
+	// "foo..bar" is a valid filename — double dots that are not path segments.
+	if err := ValidatePath("/home/user/foo..bar"); err != nil {
+		t.Errorf("expected foo..bar to be valid in path, got: %v", err)
+	}
+}
+
+func TestContainsTraversal(t *testing.T) {
+	tests := []struct {
+		path   string
+		expect bool
+	}{
+		{"../etc/passwd", true},
+		{"/home/../etc", true},
+		{"foo..bar", false},
+		{"foo/bar", false},
+		{"/home/user/file..txt", false},
+		{`C:\Users\..\secret`, true},
+	}
+
+	for _, tc := range tests {
+		got := containsTraversal(tc.path)
+		if got != tc.expect {
+			t.Errorf("containsTraversal(%q) = %v, want %v", tc.path, got, tc.expect)
+		}
 	}
 }

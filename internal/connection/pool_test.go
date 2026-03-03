@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
 	"github.com/n0madic/ssh-mcp/internal/config"
 )
 
@@ -216,6 +218,44 @@ func TestPool_ListConnections_PendingShownAsDisconnected(t *testing.T) {
 	}
 	if infos[0].Host != "pending.com" {
 		t.Errorf("expected host pending.com, got %s", infos[0].Host)
+	}
+}
+
+func TestConnection_GetClient_Connected(t *testing.T) {
+	conn := &Connection{
+		ID:        SessionID("user@host:22"),
+		Connected: true,
+		Client:    &ssh.Client{}, // non-nil stub
+	}
+	client, err := conn.GetClient()
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if client == nil {
+		t.Error("expected non-nil client")
+	}
+}
+
+func TestConnection_GetClient_Disconnected(t *testing.T) {
+	conn := &Connection{
+		ID:        SessionID("user@host:22"),
+		Connected: false,
+	}
+	_, err := conn.GetClient()
+	if err == nil {
+		t.Error("expected error for disconnected connection")
+	}
+}
+
+func TestConnection_GetClient_NilClient(t *testing.T) {
+	conn := &Connection{
+		ID:        SessionID("user@host:22"),
+		Connected: true,
+		Client:    nil,
+	}
+	_, err := conn.GetClient()
+	if err == nil {
+		t.Error("expected error for nil client")
 	}
 }
 

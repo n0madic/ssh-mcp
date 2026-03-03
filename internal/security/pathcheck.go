@@ -6,11 +6,28 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
 // MaxFilenameLength is the maximum allowed filename length (standard filesystem limit).
 const MaxFilenameLength = 255
+
+// containsTraversal checks for ".." path segments in a path string.
+// Unlike strings.Contains(p, ".."), this does not reject legitimate names like "foo..bar".
+func containsTraversal(p string) bool {
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	for _, seg := range strings.Split(p, "\\") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
+}
 
 // ValidateFilename rejects filenames that are too long, contain null bytes,
 // path separators, directory traversal, or control characters.
@@ -27,13 +44,13 @@ func ValidateFilename(name string) error {
 		return fmt.Errorf("filename contains path separator")
 	}
 
-	if name == ".." || strings.Contains(name, "..") {
+	if name == ".." {
 		return fmt.Errorf("filename contains directory traversal")
 	}
 
 	for _, r := range name {
-		if r < 0x20 {
-			return fmt.Errorf("filename contains control character (0x%02x)", r)
+		if r < 0x20 || r == 0x7F || unicode.Is(unicode.Cc, r) {
+			return fmt.Errorf("filename contains control character (U+%04X)", r)
 		}
 	}
 
@@ -42,13 +59,17 @@ func ValidateFilename(name string) error {
 
 // ValidatePath rejects paths with traversal attempts.
 func ValidatePath(p string) error {
+	if p == "" {
+		return fmt.Errorf("path is empty")
+	}
+
 	// Reject null bytes.
 	if strings.ContainsRune(p, 0) {
 		return fmt.Errorf("path %q contains null bytes", p)
 	}
 
 	// Check for directory traversal in the raw path before cleaning.
-	if strings.Contains(p, "..") {
+	if containsTraversal(p) {
 		return fmt.Errorf("path %q contains directory traversal", p)
 	}
 
@@ -71,7 +92,7 @@ func ValidateLocalPath(localPath, baseDir string) error {
 		return fmt.Errorf("path contains null bytes")
 	}
 
-	if strings.Contains(localPath, "..") {
+	if containsTraversal(localPath) {
 		return fmt.Errorf("path %q contains directory traversal", localPath)
 	}
 
@@ -135,18 +156,17 @@ func SanitizePath(base, requested string) (string, error) {
 		return "", err
 	}
 
-	// If the requested path is absolute, use it directly (after validation).
-	if path.IsAbs(requested) {
-		return path.Clean(requested), nil
+	cleaned := path.Clean(requested)
+	if !path.IsAbs(requested) {
+		cleaned = path.Clean(path.Join(base, requested))
 	}
 
-	// Join and clean.
-	joined := path.Join(base, requested)
-	cleaned := path.Clean(joined)
-
-	// Ensure the result is within base.
-	if !strings.HasPrefix(cleaned, path.Clean(base)) {
-		return "", fmt.Errorf("path %q escapes base directory %q", requested, base)
+	// Ensure the result is within base (for both absolute and relative paths).
+	if base != "" {
+		cleanBase := path.Clean(base)
+		if !strings.HasPrefix(cleaned, cleanBase+"/") && cleaned != cleanBase {
+			return "", fmt.Errorf("path %q escapes base directory %q", requested, base)
+		}
 	}
 
 	return cleaned, nil

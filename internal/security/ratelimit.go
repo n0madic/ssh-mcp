@@ -79,9 +79,14 @@ func (r *RateLimiter) getLimiter(host string) *rate.Limiter {
 
 	if exists {
 		r.mu.Lock()
-		r.lastAccessed[host] = time.Now()
+		// Re-check: entry may have been removed by cleanup between RUnlock and Lock.
+		if _, stillExists := r.limiters[host]; stillExists {
+			r.lastAccessed[host] = time.Now()
+			r.mu.Unlock()
+			return limiter
+		}
 		r.mu.Unlock()
-		return limiter
+		// Entry was removed by cleanup, fall through to recreate.
 	}
 
 	r.mu.Lock()

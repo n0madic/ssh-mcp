@@ -23,12 +23,12 @@ func HandleReadFile(ctx context.Context, deps *FileReadDeps, input SSHReadFileIn
 		return nil, fmt.Errorf("invalid remote path: %w", err)
 	}
 
-	conn, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
+	_, client, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	sc, err := sshclient.NewSFTPClient(conn.Client)
+	sc, err := sshclient.NewSFTPClient(client)
 	if err != nil {
 		return nil, err
 	}

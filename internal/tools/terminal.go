@@ -54,6 +54,11 @@ func HandleOpenTerminal(ctx context.Context, deps *TerminalDeps, input SSHOpenTe
 		}
 	}
 
+	client, err := conn.GetClient()
+	if err != nil {
+		return nil, err
+	}
+
 	// Apply defaults before calling Open so the message reflects actual values.
 	cols := input.Cols
 	if cols <= 0 {
@@ -69,7 +74,7 @@ func HandleOpenTerminal(ctx context.Context, deps *TerminalDeps, input SSHOpenTe
 		waitMs = 500
 	}
 
-	ts, err := deps.TermPool.Open(connection.SessionID(input.SessionID), conn.Client, cols, rows, input.TermType)
+	ts, err := deps.TermPool.Open(connection.SessionID(input.SessionID), client, cols, rows, input.TermType)
 	if err != nil {
 		return nil, fmt.Errorf("open terminal: %w", err)
 	}
@@ -104,10 +109,11 @@ func HandleSendInput(ctx context.Context, deps *TerminalDeps, input SSHSendInput
 	// Rate limit terminal write operations.
 	if deps.RateLimiter != nil {
 		conn, connErr := deps.Pool.GetConnection(ctx, ts.SessionID)
-		if connErr == nil {
-			if err := deps.RateLimiter.Allow(conn.Host); err != nil {
-				return nil, err
-			}
+		if connErr != nil {
+			return nil, fmt.Errorf("get connection for rate limit: %w", connErr)
+		}
+		if err := deps.RateLimiter.Allow(conn.Host); err != nil {
+			return nil, err
 		}
 	}
 

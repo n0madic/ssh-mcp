@@ -54,3 +54,18 @@ func TestTruncateOutput_EmptyString(t *testing.T) {
 		t.Errorf("expected empty string unchanged, got %q", result)
 	}
 }
+
+func TestTruncateOutput_UTF8Boundary(t *testing.T) {
+	// "Hello, 世界" — 世 is 3 bytes (E4 B8 96), 界 is 3 bytes (E7 95 8C).
+	// "Hello, " = 7 bytes, then 世 = 3 bytes, total "Hello, 世" = 10 bytes.
+	input := "Hello, 世界"
+	// Truncate at 9 bytes — would be in the middle of 世 (E4 B8 96).
+	result := TruncateOutput(input, 9)
+	// Should back up to byte 7 (after ", ") to avoid splitting UTF-8.
+	if strings.Contains(result, "\xE4\xB8") {
+		t.Errorf("truncation should not split a UTF-8 character: %q", result)
+	}
+	if !strings.Contains(result, "[OUTPUT TRUNCATED") {
+		t.Errorf("expected truncation marker, got %q", result)
+	}
+}

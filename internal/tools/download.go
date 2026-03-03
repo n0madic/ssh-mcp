@@ -26,12 +26,12 @@ func HandleDownload(ctx context.Context, deps *DownloadDeps, input SSHDownloadIn
 		return nil, fmt.Errorf("invalid remote path: %w", err)
 	}
 
-	conn, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
+	_, client, err := getConnectionWithRateLimit(ctx, deps.Pool, deps.RateLimiter, input.SessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	sftpClient, err := sshclient.NewSFTPClient(conn.Client)
+	sftpClient, err := sshclient.NewSFTPClient(client)
 	if err != nil {
 		return nil, err
 	}

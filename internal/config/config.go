@@ -189,7 +189,11 @@ func Parse() (*Config, error) {
 		os.Exit(0)
 	}
 
-	return buildConfig(args), nil
+	cfg := buildConfig(args)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("config validation: %w", err)
+	}
+	return cfg, nil
 }
 
 func buildConfig(args Args) *Config {
@@ -222,7 +226,7 @@ func buildConfig(args Args) *Config {
 			MaxTerminals:      args.MaxTerminals,
 			MaxOutputSize:     args.MaxOutputSize,
 			MaxTunnels:        args.MaxTunnels,
-		AllowTunnels:      args.EnableTunnels,
+			AllowTunnels:      args.EnableTunnels,
 		},
 		Security: SecurityConfig{
 			HostAllowlist:    []string(args.HostAllowlist),

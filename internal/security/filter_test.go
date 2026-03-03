@@ -1,6 +1,7 @@
 package security
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -239,6 +240,71 @@ func TestFilter_CIDR_IPv6(t *testing.T) {
 	}
 	if err := f.AllowHost("2001:db8::1"); err == nil {
 		t.Error("expected 2001:db8::1 denied (not in fd00::/8)")
+	}
+}
+
+func TestFilter_AllowHost_CaseInsensitive(t *testing.T) {
+	f, err := NewFilter([]string{"MyServer"}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Hostnames are case-insensitive per RFC 4343.
+	if err := f.AllowHost("myserver"); err != nil {
+		t.Errorf("expected lowercase match: %v", err)
+	}
+	if err := f.AllowHost("MYSERVER"); err != nil {
+		t.Errorf("expected uppercase match: %v", err)
+	}
+	if err := f.AllowHost("MyServer"); err != nil {
+		t.Errorf("expected mixed case match: %v", err)
+	}
+}
+
+func TestFilter_DenyHost_CaseInsensitive(t *testing.T) {
+	f, err := NewFilter(nil, []string{"BadHost"}, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := f.AllowHost("badhost"); err == nil {
+		t.Error("expected lowercase badhost to be denied")
+	}
+	if err := f.AllowHost("BADHOST"); err == nil {
+		t.Error("expected uppercase BADHOST to be denied")
+	}
+}
+
+func TestFilter_ErrorMessages_NoPattern(t *testing.T) {
+	// Use patterns that differ from the actual host/command values
+	// so we can verify the pattern itself is not leaked.
+	f, err := NewFilter(nil, []string{`bad-host\d+`}, nil, []string{`rm\s+-rf.*`})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Host deny error should not contain the regex pattern.
+	err = f.AllowHost("bad-host1")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), `bad-host\d+`) {
+		t.Errorf("error should not expose deny regex pattern: %v", err)
+	}
+	if !strings.Contains(err.Error(), "security policy") {
+		t.Errorf("error should mention security policy: %v", err)
+	}
+
+	// Command deny error should not contain the regex pattern.
+	err = f.AllowCommand("rm -rf /")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), `rm\s+-rf`) {
+		t.Errorf("error should not expose deny regex pattern: %v", err)
+	}
+	if !strings.Contains(err.Error(), "security policy") {
+		t.Errorf("error should mention security policy: %v", err)
 	}
 }
 

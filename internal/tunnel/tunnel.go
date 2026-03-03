@@ -134,7 +134,11 @@ func (ts *TunnelSession) acceptLoop() {
 		ts.mu.Unlock()
 		ts.connCount.Add(1)
 
-		go ts.forward(localConn)
+		ts.wg.Add(1)
+		go func() {
+			defer ts.wg.Done()
+			ts.forward(localConn)
+		}()
 	}
 }
 

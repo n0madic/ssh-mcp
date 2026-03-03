@@ -47,6 +47,7 @@ type Connection struct {
 	addr         string            // stored for auto-reconnect
 	ready        chan struct{}     // closed when connection attempt completes
 	connectErr   error             // non-nil if the connection attempt failed
+	reconnectMu  sync.Mutex        // serializes auto-reconnect attempts
 }
 
 // Pool manages a thread-safe pool of SSH connections.
@@ -163,9 +164,12 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 				delete(p.conns, id)
 			}
 			p.mu.Unlock()
+			existing.mu.Lock()
 			if existing.Client != nil {
 				existing.Client.Close()
+				existing.Client = nil
 			}
+			existing.mu.Unlock()
 		}
 	}
 
@@ -187,13 +191,22 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 
 	p.mu.Lock()
 
-	// Enforce max connections limit.
-	if p.cfg.MaxConnections > 0 && len(p.conns) >= p.cfg.MaxConnections {
-		// Don't count entries that are ours to replace.
+	// Enforce max connections limit (count only active connections).
+	if p.cfg.MaxConnections > 0 {
 		if _, replacing := p.conns[id]; !replacing {
-			p.mu.Unlock()
-			close(pending.ready) // signal so no one waits forever
-			return "", fmt.Errorf("connection pool is full (max %d connections)", p.cfg.MaxConnections)
+			activeCount := 0
+			for _, c := range p.conns {
+				c.mu.RLock()
+				if c.Connected {
+					activeCount++
+				}
+				c.mu.RUnlock()
+			}
+			if activeCount >= p.cfg.MaxConnections {
+				p.mu.Unlock()
+				close(pending.ready) // signal so no one waits forever
+				return "", fmt.Errorf("connection pool is full (max %d active connections)", p.cfg.MaxConnections)
+			}
 		}
 	}
 
@@ -224,9 +237,12 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 		p.mu.Lock()
 		if cur, ok := p.conns[id]; ok && cur == existing {
 			delete(p.conns, id)
+			existing.mu.Lock()
 			if existing.Client != nil {
 				existing.Client.Close()
+				existing.Client = nil
 			}
+			existing.mu.Unlock()
 		} else if cur, ok := p.conns[id]; ok && cur != pending {
 			// Yet another goroutine beat us; give up and let caller retry.
 			p.mu.Unlock()
@@ -297,6 +313,22 @@ func (p *Pool) GetConnection(ctx context.Context, id SessionID) (*Connection, er
 
 	conn.mu.RLock()
 	alive := conn.Connected && p.isAlive(conn.Client)
+	conn.mu.RUnlock()
+
+	if alive {
+		conn.mu.Lock()
+		conn.LastUsed = time.Now()
+		conn.mu.Unlock()
+		return conn, nil
+	}
+
+	// Serialize auto-reconnect attempts for this connection.
+	conn.reconnectMu.Lock()
+	defer conn.reconnectMu.Unlock()
+
+	// Re-check alive after acquiring reconnect lock — another goroutine may have reconnected.
+	conn.mu.RLock()
+	alive = conn.Connected && p.isAlive(conn.Client)
 	conn.mu.RUnlock()
 
 	if alive {
@@ -433,6 +465,16 @@ func (p *Pool) CloseAll() {
 	}
 }
 
+// GetClient returns the SSH client under a read lock, ensuring it is not nil and the connection is active.
+func (c *Connection) GetClient() (*ssh.Client, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.Connected || c.Client == nil {
+		return nil, fmt.Errorf("connection %s is not active", c.ID)
+	}
+	return c.Client, nil
+}
+
 // GetRemoteInfo returns the detected remote host information.
 func (c *Connection) GetRemoteInfo() RemoteInfo {
 	c.mu.RLock()
@@ -451,6 +493,15 @@ func (p *Pool) isAlive(client *ssh.Client) bool {
 	if client == nil {
 		return false
 	}
-	_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
-	return err == nil
+	ch := make(chan error, 1)
+	go func() {
+		_, _, err := client.SendRequest("keepalive@openssh.com", true, nil)
+		ch <- err
+	}()
+	select {
+	case err := <-ch:
+		return err == nil
+	case <-time.After(5 * time.Second):
+		return false
+	}
 }
