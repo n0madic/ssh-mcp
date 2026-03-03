@@ -520,17 +520,19 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 
 	// Wait for context cancellation or first error.
+	var transportErr error
 	select {
 	case <-ctx.Done():
 		log.Println("Shutting down...")
 	case err := <-errCh:
 		if err != nil {
 			log.Printf("Transport error: %v", err)
+			transportErr = err
 		}
 	}
 
 	s.shutdown()
-	return nil
+	return transportErr
 }
 
 func (s *Server) runStdio(ctx context.Context) error {

@@ -282,7 +282,7 @@ func TestE2E(t *testing.T) {
 		}
 
 		// Close all tunnels by listing and closing.
-		text = callTool(t, env, "ssh_tunnel_list", map[string]any{})
+		_ = callTool(t, env, "ssh_tunnel_list", map[string]any{})
 		// The list format includes tunnel IDs; we'll disconnect the session which closes tunnels.
 
 		// Disconnect session — should also close tunnels.

@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strings"
 
@@ -132,8 +134,13 @@ func editPatch(sc *sftp.Client, deps *FileEditDeps, input SSHEditFileInput, doBa
 func createBackup(sc *sftp.Client, remotePath string, maxFileSize int64) error {
 	data, err := sshclient.ReadFile(sc, remotePath, maxFileSize)
 	if err != nil {
-		// File doesn't exist yet, no backup needed.
-		return nil
+		// Use errors.Is to traverse fmt.Errorf("%w") wrapping from ReadFile.
+		// os.IsNotExist only unwraps *os.PathError, not arbitrary wrappers.
+		if errors.Is(err, fs.ErrNotExist) || os.IsNotExist(err) {
+			// File doesn't exist yet, no backup needed.
+			return nil
+		}
+		return fmt.Errorf("backup failed, cannot read %s: %w", remotePath, err)
 	}
 
 	perms := defaultPerms(sc, remotePath)

@@ -31,13 +31,14 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **HTTP timeouts** — `ReadHeaderTimeout: 10s`, `IdleTimeout: 120s` (no Read/WriteTimeout to avoid breaking SSE streaming)
 - **Local path restriction** — `--local-base-dir` restricts upload/download local paths
 - **No credential persistence** — passwords are not stored in the connection pool; only `ssh.ClientConfig` is retained for auto-reconnect
-- **Config validation** — `Parse()` calls `Validate()` after building config; all constraints (ports, timeouts, limits) checked before server start
+- **Config validation** — `Parse()` calls `Validate()` after building config; all constraints (ports, timeouts, limits) checked before server start; `buildConfig` fails fast if home directory cannot be determined
 - **GetClient() method** — thread-safe access to `conn.Client` via `Connection.GetClient()` with read lock; prevents race with idle cleanup
 - **Auto-anchored filters** — regex patterns are auto-anchored with `^(?:...)`/`$` for safe full-string matching
 - **CIDR host filtering** — host patterns support CIDR notation (e.g., `10.0.0.0/8`) alongside regex; auto-detected
 - **Filename validation** — `ValidateFilename()` rejects names >255 chars, control characters (including DEL 0x7F and Unicode Cc), path separators
 - **Sudo disabled by default** — requires `--enable-sudo`
 - **File permissions preserved** — rwx bits are read from source and applied to destination
+- **Symlink protection in upload** — `UploadDir` skips symlinks during `filepath.Walk` to prevent reading files outside `local-base-dir`
 - **Remote path expansion** — `~` and relative paths expanded via `sftp.RealPath()` server-side
 - **Text output** — handlers return human-readable text via `textResult()` instead of JSON for better UX
 - **Efficient directory traversal** — uses `sftp.Walk()` for optimal performance
@@ -45,6 +46,7 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **Terminal pool limit** — `--max-terminals` caps concurrent PTY sessions; enforced with pool lock before SSH session creation
 - **Terminal done channel** — `done` channel closed via `sync.Once` (`signalDone`) when read goroutines exit; unblocks `ReadNew`/`ReadNewSince` immediately on close
 - **Terminal buffer compaction** — output buffer compacted (copied to index 0) when `readPos` exceeds 1 MB to reclaim memory
+- **Terminal buffer cap** — hard limit of 10 MB (`maxBufferSize`) on output buffer; oldest data discarded when exceeded to prevent unbounded memory growth
 - **SSH config auto-discovery** — `~/.ssh/config` aliases are resolved automatically on connect, no flag needed; explicit parameters override config values
 - **Graceful timeout** — `ssh_execute` sends SIGTERM first, waits 5s grace period, then SIGKILL; returns partial stdout/stderr as result (not error) with `[TIMEOUT]` marker
 - **File read with pagination** — `ssh_read_file` supports line offset/limit for token-efficient reading; formats output with `cat -n` style line numbers
@@ -53,6 +55,7 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **SSH tunnels** — local port forwarding via `TunnelPool` in `internal/tunnel`; accept loop goroutine per tunnel; bidirectional `io.Copy` forwarding; tunnels closed on session disconnect and server shutdown
 - **Tunnel pool limit** — `--max-tunnels` caps concurrent tunnels; enforced with pool lock before listener creation
 - **Tunnel auto-cleanup** — `CloseBySession()` called in `HandleDisconnect` before pool disconnect; `CloseAll()` called in server shutdown before terminal/connection cleanup
+- **Tunnel connection tracking** — active forwarding connections tracked via `trackConn`/`untrackConn`; `closeTunnel` closes all active connections to unblock `io.Copy` goroutines
 - **Terminal auto-cleanup** — `TermPool.CloseBySession()` called in `HandleDisconnect` before tunnel cleanup; terminals closed before tunnels before connection pool disconnect
 - **Case-insensitive host patterns** — host regex patterns compiled with `(?i)` prefix for RFC 4343 compliance
 - **Segment-based traversal check** — `containsTraversal()` checks for `..` as path segments, not substrings; allows legitimate names like `foo..bar`
@@ -176,12 +179,13 @@ Unit tests are in `*_test.go` files alongside source:
 - `ratelimit_test.go` — per-host rate limiting, burst, cleanup
 - `pathcheck_test.go` — path traversal detection, filename validation (length, control chars), local path validation, null bytes, base dir containment
 - `server_test.go` — server creation, tool registration, HTTP auth middleware
-- `terminal_test.go` (connection) — pool open/close/get, list, ReadNew/ReadNewSince, done channel unblock, buffer compaction, maxTerminals
+- `terminal_test.go` (connection) — pool open/close/get, list, ReadNew/ReadNewSince, done channel unblock, buffer compaction, buffer cap (maxBufferSize), maxTerminals
 - `terminal_test.go` (tools) — special key mapping, handler validation (disabled flag, missing session, missing terminal, both text+key, unknown key), escape replacer
 - `execute_test.go` — kill grace period constant, execute output Text() for timeout/normal/error scenarios
 - `file_read_test.go` — read file output Text() for content, empty file, offset beyond EOF
 - `types_test.go` — SSHConnectInput without UseSSHConfig, SSHReadFileOutput Text() edge cases
 - `helpers_test.go` — TruncateOutput: unlimited, negative, short string, exact limit, over limit, empty string
+- `sftp_test.go` — UploadDir symlink skipping
 - `tunnel_test.go` (tunnel) — pool open/close, get unknown, CloseBySession, List filtering, CloseAll, maxTunnels, double close
 - `tunnel_test.go` (tools) — handler validation (missing session_id, missing remote_addr, missing tunnel_id, close not found), list empty, list output Text()
 

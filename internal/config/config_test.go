@@ -23,7 +23,10 @@ func TestLoadDefaults(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.SSH.VerifyHostKey != true {
 		t.Error("expected VerifyHostKey to be true by default")
@@ -73,7 +76,10 @@ func TestBuildConfig_HTTPEnabled(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if !cfg.Transport.HTTPEnabled {
 		t.Error("expected HTTPEnabled=true")
@@ -95,7 +101,10 @@ func TestBuildConfig_DisableStdio(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.Transport.StdioEnabled {
 		t.Error("expected StdioEnabled=false when disabled")
@@ -109,7 +118,10 @@ func TestBuildConfig_NoVerifyHost(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.SSH.VerifyHostKey {
 		t.Error("expected VerifyHostKey=false when --no-verify-host-key")
@@ -123,7 +135,10 @@ func TestBuildConfig_EnableSudo(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if !cfg.SSH.AllowSudo {
 		t.Error("expected AllowSudo=true when --enable-sudo")
@@ -140,7 +155,10 @@ func TestBuildConfig_SecurityLists(t *testing.T) {
 		CommandTimeout:   60 * time.Second,
 		RateLimit:        60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if len(cfg.Security.HostAllowlist) != 2 {
 		t.Errorf("expected 2 host allowlist entries, got %d", len(cfg.Security.HostAllowlist))
@@ -162,7 +180,10 @@ func TestValidate_Valid(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("expected valid config, got error: %v", err)
 	}
@@ -174,7 +195,10 @@ func TestValidate_InvalidPort(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for port 0")
 	}
@@ -188,7 +212,10 @@ func TestValidate_NoTransport(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error when no transport enabled")
 	}
@@ -200,7 +227,10 @@ func TestValidate_InvalidTimeout(t *testing.T) {
 		CommandTimeout: -1 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for negative timeout")
 	}
@@ -212,7 +242,10 @@ func TestValidate_InvalidRateLimit(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      0,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for zero rate limit")
 	}
@@ -274,7 +307,10 @@ func TestBuildConfig_NewSecurityFlags(t *testing.T) {
 		CommandTimeout:   60 * time.Second,
 		RateLimit:        60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.Security.LocalBaseDir != "/tmp" {
 		t.Errorf("expected LocalBaseDir=/tmp, got %s", cfg.Security.LocalBaseDir)
@@ -300,7 +336,10 @@ func TestValidate_InvalidMaxFileSize(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for negative max file size")
 	}
@@ -312,7 +351,10 @@ func TestValidate_InvalidMaxConnections(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	cfg.SSH.MaxConnections = -1
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for negative max connections")
@@ -326,7 +368,10 @@ func TestBuildConfig_MaxTerminals(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.SSH.MaxTerminals != 10 {
 		t.Errorf("expected MaxTerminals=10, got %d", cfg.SSH.MaxTerminals)
@@ -339,7 +384,10 @@ func TestValidate_InvalidMaxTerminals(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	cfg.SSH.MaxTerminals = -1
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for negative max terminals")
@@ -353,7 +401,10 @@ func TestBuildConfig_MaxOutputSize(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.SSH.MaxOutputSize != 4096 {
 		t.Errorf("expected MaxOutputSize=4096, got %d", cfg.SSH.MaxOutputSize)
@@ -366,7 +417,10 @@ func TestValidate_InvalidMaxOutputSize(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	cfg.SSH.MaxOutputSize = -1
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for negative max output size")
@@ -380,7 +434,10 @@ func TestBuildConfig_MaxTunnels(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 
 	if cfg.SSH.MaxTunnels != 10 {
 		t.Errorf("expected MaxTunnels=10, got %d", cfg.SSH.MaxTunnels)
@@ -394,7 +451,10 @@ func TestBuildConfig_EnableTunnels(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	if !cfg.SSH.AllowTunnels {
 		t.Error("expected AllowTunnels=true")
 	}
@@ -406,7 +466,10 @@ func TestValidate_InvalidMaxTunnels(t *testing.T) {
 		CommandTimeout: 60 * time.Second,
 		RateLimit:      60,
 	}
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
 	cfg.SSH.MaxTunnels = -1
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for negative max tunnels")

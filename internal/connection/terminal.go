@@ -15,6 +15,10 @@ import (
 // is compacted (copied down to index 0) to reclaim memory.
 const bufferCompactThreshold = 1 << 20 // 1 MB
 
+// maxBufferSize is the hard upper limit for the terminal output buffer.
+// When exceeded, the oldest data is discarded to prevent unbounded memory growth.
+const maxBufferSize = 10 << 20 // 10 MB
+
 // TerminalID uniquely identifies a PTY terminal session.
 type TerminalID string
 
@@ -167,6 +171,17 @@ func (ts *TerminalSession) readLoop(r io.Reader) {
 		if n > 0 {
 			ts.outputMu.Lock()
 			ts.outputBuf = append(ts.outputBuf, buf[:n]...)
+			// Cap the buffer to prevent unbounded memory growth.
+			if len(ts.outputBuf) > maxBufferSize {
+				excess := len(ts.outputBuf) - maxBufferSize
+				if ts.readPos < excess {
+					ts.readPos = 0
+				} else {
+					ts.readPos -= excess
+				}
+				copy(ts.outputBuf, ts.outputBuf[excess:])
+				ts.outputBuf = ts.outputBuf[:maxBufferSize]
+			}
 			ts.outputMu.Unlock()
 
 			// Signal waiting readers by closing and replacing the channel.

@@ -189,15 +189,21 @@ func Parse() (*Config, error) {
 		os.Exit(0)
 	}
 
-	cfg := buildConfig(args)
+	cfg, err := buildConfig(args)
+	if err != nil {
+		return nil, err
+	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("config validation: %w", err)
 	}
 	return cfg, nil
 }
 
-func buildConfig(args Args) *Config {
-	homeDir, _ := os.UserHomeDir()
+func buildConfig(args Args) (*Config, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("cannot determine home directory: %w", err)
+	}
 	sshDir := filepath.Join(homeDir, ".ssh")
 
 	knownHosts := args.KnownHosts
@@ -247,7 +253,7 @@ func buildConfig(args Args) *Config {
 			HTTPToken:    args.HTTPToken,
 		},
 		DisabledTools: []string(args.DisableTools),
-	}
+	}, nil
 }
 
 func defaultKeyPaths(sshDir string) []string {

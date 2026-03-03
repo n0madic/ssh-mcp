@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -108,6 +109,13 @@ func UploadDir(sftpClient *sftp.Client, localDir, remoteDir string) (int, int64,
 	err := filepath.Walk(localDir, func(localPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Skip symlinks to prevent reading files outside the allowed directory.
+		// filepath.Walk uses os.Lstat, so info correctly reports symlinks.
+		if info.Mode()&os.ModeSymlink != 0 {
+			log.Printf("upload: skipping symlink %s", localPath)
+			return nil
 		}
 
 		relPath, err := filepath.Rel(localDir, localPath)

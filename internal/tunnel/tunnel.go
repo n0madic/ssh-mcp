@@ -33,6 +33,9 @@ type TunnelSession struct {
 	closed bool
 	done   chan struct{}
 	wg     sync.WaitGroup
+
+	activeConnsMu sync.Mutex
+	activeConns   []net.Conn
 }
 
 // TunnelInfo provides read-only metadata about an active tunnel.
@@ -142,6 +145,27 @@ func (ts *TunnelSession) acceptLoop() {
 	}
 }
 
+// trackConn registers active connections for cleanup on tunnel close.
+func (ts *TunnelSession) trackConn(conns ...net.Conn) {
+	ts.activeConnsMu.Lock()
+	ts.activeConns = append(ts.activeConns, conns...)
+	ts.activeConnsMu.Unlock()
+}
+
+// untrackConn removes connections from the active set after forwarding completes.
+func (ts *TunnelSession) untrackConn(conns ...net.Conn) {
+	ts.activeConnsMu.Lock()
+	for _, c := range conns {
+		for i, ac := range ts.activeConns {
+			if ac == c {
+				ts.activeConns = append(ts.activeConns[:i], ts.activeConns[i+1:]...)
+				break
+			}
+		}
+	}
+	ts.activeConnsMu.Unlock()
+}
+
 // forward establishes a connection to the remote address via SSH and copies
 // data bidirectionally between the local and remote connections.
 func (ts *TunnelSession) forward(localConn net.Conn) {
@@ -151,6 +175,9 @@ func (ts *TunnelSession) forward(localConn net.Conn) {
 		localConn.Close()
 		return
 	}
+
+	ts.trackConn(localConn, remoteConn)
+	defer ts.untrackConn(localConn, remoteConn)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -218,16 +245,26 @@ func (tp *TunnelPool) List(sessionID string) []TunnelInfo {
 	return result
 }
 
-// closeTunnel closes a tunnel session's resources.
+// closeTunnel closes a tunnel session's resources, including active forwarding connections.
 func closeTunnel(ts *TunnelSession) {
 	ts.mu.Lock()
-	defer ts.mu.Unlock()
 	if ts.closed {
+		ts.mu.Unlock()
 		return
 	}
 	ts.closed = true
+	ts.mu.Unlock()
+
 	ts.listener.Close()
 	close(ts.done)
+
+	// Close active forwarding connections to unblock io.Copy goroutines.
+	ts.activeConnsMu.Lock()
+	for _, c := range ts.activeConns {
+		c.Close()
+	}
+	ts.activeConns = nil
+	ts.activeConnsMu.Unlock()
 }
 
 // Close terminates a tunnel and removes it from the pool.

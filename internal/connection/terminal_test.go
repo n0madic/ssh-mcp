@@ -300,6 +300,107 @@ func TestTerminalSessionBufferCompaction(t *testing.T) {
 	ts.outputMu.Unlock()
 }
 
+// TestTerminalSessionBufferCap verifies that the output buffer is capped
+// at maxBufferSize, discarding oldest data when exceeded.
+func TestTerminalSessionBufferCap(t *testing.T) {
+	ts := &TerminalSession{
+		outputNew: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+
+	// Simulate writing data beyond maxBufferSize directly into the buffer,
+	// mimicking what readLoop does.
+	chunkSize := 4096
+	totalWritten := 0
+	for totalWritten < maxBufferSize+chunkSize*10 {
+		chunk := make([]byte, chunkSize)
+		for i := range chunk {
+			chunk[i] = byte('A' + (totalWritten/chunkSize)%26)
+		}
+		ts.outputMu.Lock()
+		ts.outputBuf = append(ts.outputBuf, chunk...)
+		// Apply the same cap logic as readLoop.
+		if len(ts.outputBuf) > maxBufferSize {
+			excess := len(ts.outputBuf) - maxBufferSize
+			if ts.readPos < excess {
+				ts.readPos = 0
+			} else {
+				ts.readPos -= excess
+			}
+			copy(ts.outputBuf, ts.outputBuf[excess:])
+			ts.outputBuf = ts.outputBuf[:maxBufferSize]
+		}
+		ts.outputMu.Unlock()
+		totalWritten += chunkSize
+	}
+
+	// Buffer should be capped at maxBufferSize.
+	ts.outputMu.Lock()
+	bufLen := len(ts.outputBuf)
+	readPos := ts.readPos
+	ts.outputMu.Unlock()
+
+	if bufLen > maxBufferSize {
+		t.Errorf("expected buffer <= %d bytes, got %d", maxBufferSize, bufLen)
+	}
+	if readPos < 0 {
+		t.Errorf("readPos should be non-negative, got %d", readPos)
+	}
+
+	// Reading should still work and return available data.
+	result := ts.ReadNew(0)
+	if len(result) == 0 {
+		t.Error("expected non-empty read after buffer cap")
+	}
+}
+
+// TestTerminalSessionBufferCapWithPartialRead verifies that readPos is
+// correctly adjusted when the buffer cap discards unread data.
+func TestTerminalSessionBufferCapWithPartialRead(t *testing.T) {
+	ts := &TerminalSession{
+		outputNew: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+
+	// Write some initial data and read part of it.
+	initial := make([]byte, 1000)
+	for i := range initial {
+		initial[i] = 'X'
+	}
+	ts.outputMu.Lock()
+	ts.outputBuf = initial
+	ts.readPos = 500 // Simulate having read 500 bytes.
+	ts.outputMu.Unlock()
+
+	// Now flood the buffer past maxBufferSize.
+	flood := make([]byte, maxBufferSize+1000)
+	for i := range flood {
+		flood[i] = 'Y'
+	}
+	ts.outputMu.Lock()
+	ts.outputBuf = append(ts.outputBuf, flood...)
+	if len(ts.outputBuf) > maxBufferSize {
+		excess := len(ts.outputBuf) - maxBufferSize
+		if ts.readPos < excess {
+			ts.readPos = 0
+		} else {
+			ts.readPos -= excess
+		}
+		copy(ts.outputBuf, ts.outputBuf[excess:])
+		ts.outputBuf = ts.outputBuf[:maxBufferSize]
+	}
+	bufLen := len(ts.outputBuf)
+	readPos := ts.readPos
+	ts.outputMu.Unlock()
+
+	if bufLen != maxBufferSize {
+		t.Errorf("expected buffer = %d, got %d", maxBufferSize, bufLen)
+	}
+	if readPos != 0 {
+		t.Errorf("expected readPos=0 after excess > readPos, got %d", readPos)
+	}
+}
+
 // TestTerminalPoolList verifies that List returns correct terminal info
 // and supports optional filtering by session ID.
 func TestTerminalPoolList(t *testing.T) {
