@@ -30,6 +30,7 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **HTTP bearer auth** — optional `--http-token` for HTTP transport authentication; constant-time comparison via `crypto/subtle`
 - **HTTP timeouts** — `ReadHeaderTimeout: 10s`, `IdleTimeout: 120s` (no Read/WriteTimeout to avoid breaking SSE streaming)
 - **Local path restriction** — `--local-base-dir` restricts upload/download local paths
+- **SSH agent support** — connects to `SSH_AUTH_SOCK` for agent-based auth (handles passphrase-protected keys loaded into agent); tried after explicit key, before default key files
 - **No credential persistence** — passwords are not stored in the connection pool; only `ssh.ClientConfig` is retained for auto-reconnect
 - **Config validation** — `Parse()` calls `Validate()` after building config; all constraints (ports, timeouts, limits) checked before server start; `buildConfig` fails fast if home directory cannot be determined
 - **GetClient() method** — thread-safe access to `conn.Client` via `Connection.GetClient()` with read lock; prevents race with idle cleanup
@@ -172,7 +173,7 @@ for walker.Step() {
 
 Unit tests are in `*_test.go` files alongside source:
 - `config_test.go` — config building, validation, defaults, CLI parsing, new security flags
-- `auth_test.go` — host parsing, auth method discovery, missing known_hosts error
+- `auth_test.go` — host parsing, auth method discovery, ssh-agent auth (no socket, invalid socket), missing known_hosts error
 - `pool_test.go` — pool operations, session management
 - `detect_test.go` — remote OS/shell detection parsing (POSIX and Windows), concurrency safety
 - `filter_test.go` — host/command allow/deny with regex, CIDR matching, auto-anchoring, partial match prevention

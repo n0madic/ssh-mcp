@@ -12,6 +12,7 @@ import (
 
 	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 
 	"github.com/n0madic/ssh-mcp/internal/config"
@@ -82,21 +83,30 @@ func (a *AuthDiscovery) ResolveHost(alias string) *ResolvedHost {
 }
 
 // BuildAuthMethods constructs SSH authentication methods from the given parameters.
-// Keys are tried first, then password.
+// Agent is tried first; file-based keys are used only when no agent is available.
 func (a *AuthDiscovery) BuildAuthMethods(params ConnectParams) []ssh.AuthMethod {
 	var methods []ssh.AuthMethod
 
-	// Try explicit key path first.
-	if params.KeyPath != "" {
-		if method := a.loadKeyAuth(expandPath(params.KeyPath)); method != nil {
-			methods = append(methods, method)
-		}
+	// Try ssh-agent first (handles passphrase-protected keys loaded into agent).
+	agentAvailable := false
+	if method := a.agentAuth(); method != nil {
+		methods = append(methods, method)
+		agentAvailable = true
 	}
 
-	// Try default key paths.
-	for _, keyPath := range a.cfg.KeySearchPaths {
-		if method := a.loadKeyAuth(keyPath); method != nil {
-			methods = append(methods, method)
+	// Try key files only when agent is not available.
+	if !agentAvailable {
+		// Try explicit key path first.
+		if params.KeyPath != "" {
+			if method := a.loadKeyAuth(expandPath(params.KeyPath)); method != nil {
+				methods = append(methods, method)
+			}
+		}
+		// Try default key paths.
+		for _, keyPath := range a.cfg.KeySearchPaths {
+			if method := a.loadKeyAuth(keyPath); method != nil {
+				methods = append(methods, method)
+			}
 		}
 	}
 
@@ -157,6 +167,28 @@ func ParseHostString(s string) ConnectParams {
 	}
 
 	return params
+}
+
+func (a *AuthDiscovery) agentAuth() ssh.AuthMethod {
+	socket := os.Getenv("SSH_AUTH_SOCK")
+	if socket == "" {
+		return nil
+	}
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		log.Printf("SSH agent connection failed: %v", err)
+		return nil
+	}
+	agentClient := agent.NewClient(conn)
+
+	// Verify agent is reachable by listing keys.
+	if _, err := agentClient.List(); err != nil {
+		log.Printf("SSH agent: %v", err)
+		conn.Close()
+		return nil
+	}
+
+	return ssh.PublicKeysCallback(agentClient.Signers)
 }
 
 func (a *AuthDiscovery) loadKeyAuth(keyPath string) ssh.AuthMethod {

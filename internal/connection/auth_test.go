@@ -78,6 +78,7 @@ func TestMakeSessionID(t *testing.T) {
 }
 
 func TestAuthDiscovery_BuildAuthMethods_NoKeys(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
 	cfg := &config.SSHConfig{
 		KeySearchPaths:    []string{"/nonexistent/path"},
 		ConnectionTimeout: 30 * time.Second,
@@ -94,6 +95,7 @@ func TestAuthDiscovery_BuildAuthMethods_NoKeys(t *testing.T) {
 }
 
 func TestAuthDiscovery_BuildAuthMethods_NoMethods(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
 	cfg := &config.SSHConfig{
 		KeySearchPaths:    []string{"/nonexistent/path"},
 		ConnectionTimeout: 30 * time.Second,
@@ -108,6 +110,7 @@ func TestAuthDiscovery_BuildAuthMethods_NoMethods(t *testing.T) {
 }
 
 func TestAuthDiscovery_BuildClientConfig_NoMethods(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
 	cfg := &config.SSHConfig{
 		KeySearchPaths:    []string{"/nonexistent/path"},
 		VerifyHostKey:     false,
@@ -119,6 +122,34 @@ func TestAuthDiscovery_BuildClientConfig_NoMethods(t *testing.T) {
 	_, err := auth.BuildClientConfig(params)
 	if err == nil {
 		t.Error("expected error when no auth methods available")
+	}
+}
+
+func TestAuthDiscovery_AgentAuth_NoSocket(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "")
+	cfg := &config.SSHConfig{
+		KeySearchPaths:    []string{"/nonexistent/path"},
+		ConnectionTimeout: 30 * time.Second,
+	}
+	auth := NewAuthDiscovery(cfg)
+
+	method := auth.agentAuth()
+	if method != nil {
+		t.Error("expected nil auth method when SSH_AUTH_SOCK is empty")
+	}
+}
+
+func TestAuthDiscovery_AgentAuth_InvalidSocket(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", "/nonexistent/agent.sock")
+	cfg := &config.SSHConfig{
+		KeySearchPaths:    []string{"/nonexistent/path"},
+		ConnectionTimeout: 30 * time.Second,
+	}
+	auth := NewAuthDiscovery(cfg)
+
+	method := auth.agentAuth()
+	if method != nil {
+		t.Error("expected nil auth method when SSH_AUTH_SOCK is invalid")
 	}
 }
 
