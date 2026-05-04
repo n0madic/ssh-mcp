@@ -83,25 +83,24 @@ func (a *AuthDiscovery) ResolveHost(alias string) *ResolvedHost {
 }
 
 // BuildAuthMethods constructs SSH authentication methods from the given parameters.
-// Agent is tried first; file-based keys are used only when no agent is available.
+// Explicit key is tried first, then ssh-agent, then default key files (only when no agent).
 func (a *AuthDiscovery) BuildAuthMethods(params ConnectParams) []ssh.AuthMethod {
 	var methods []ssh.AuthMethod
+	// Try explicit key path first.
+	if params.KeyPath != "" {
+		if method := a.loadKeyAuth(expandPath(params.KeyPath)); method != nil {
+			methods = append(methods, method)
+		}
+	}
 
-	// Try ssh-agent first (handles passphrase-protected keys loaded into agent).
+	// Try ssh-agent next (handles passphrase-protected keys loaded into agent).
 	agentAvailable := false
 	if method := a.agentAuth(); method != nil {
 		methods = append(methods, method)
 		agentAvailable = true
 	}
-
-	// Try key files only when agent is not available.
+	// Try default key files only when agent is not available.
 	if !agentAvailable {
-		// Try explicit key path first.
-		if params.KeyPath != "" {
-			if method := a.loadKeyAuth(expandPath(params.KeyPath)); method != nil {
-				methods = append(methods, method)
-			}
-		}
 		// Try default key paths.
 		for _, keyPath := range a.cfg.KeySearchPaths {
 			if method := a.loadKeyAuth(keyPath); method != nil {

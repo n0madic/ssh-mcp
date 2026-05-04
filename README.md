@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server that provides AI agents with secure SSH ac
 ## Features
 
 - **SSH Connection Pool** — reuses connections, auto-reconnect on failure, idle cleanup, auto-detection of remote OS and shell
-- **Authentication** — SSH keys (auto-discovery), ssh-agent, password, automatic `~/.ssh/config` alias resolution
+- **Authentication** — explicit `key_path` first, then ssh-agent, then auto-discovered `~/.ssh/id_*` keys (when no agent), then password; automatic `~/.ssh/config` alias resolution
 - **Command Execution** — with sudo support, working directory, timeout, graceful kill (SIGTERM → SIGKILL), ANSI stripping
 - **SFTP File Operations** — upload/download files and directories, read files with line offset/limit, edit files (replace/patch/create), file info with directory listing, `~` path expansion
 - **Interactive PTY Terminals** — buffered PTY sessions for interactive programs (vim, htop, REPL), dialogs, and real-time output (opt-in with `--enable-terminal`)
