@@ -12,7 +12,7 @@ func TestParseDetectionOutput(t *testing.T) {
 		expected RemoteInfo
 	}{
 		{
-			name:   "Linux full output",
+			name:   "Linux full output (legacy 3-line)",
 			output: "Linux\nx86_64\n/bin/bash",
 			expected: RemoteInfo{
 				OS:    "Linux",
@@ -21,7 +21,47 @@ func TestParseDetectionOutput(t *testing.T) {
 			},
 		},
 		{
-			name:   "Darwin full output",
+			name:   "Linux 5-line output with apt + sudo-n",
+			output: "Linux\nx86_64\n/bin/bash\napt\nyes",
+			expected: RemoteInfo{
+				OS:                 "Linux",
+				Arch:               "x86_64",
+				Shell:              "/bin/bash",
+				PackageManager:     "apt",
+				SudoNoninteractive: true,
+			},
+		},
+		{
+			name:   "Linux 5-line output without package manager and no sudo",
+			output: "Linux\nx86_64\n/bin/bash\n\nno",
+			expected: RemoteInfo{
+				OS:    "Linux",
+				Arch:  "x86_64",
+				Shell: "/bin/bash",
+			},
+		},
+		{
+			name:   "Alpine apk",
+			output: "Linux\nx86_64\n/bin/sh\napk\nno",
+			expected: RemoteInfo{
+				OS:             "Linux",
+				Arch:           "x86_64",
+				Shell:          "/bin/sh",
+				PackageManager: "apk",
+			},
+		},
+		{
+			name:   "Darwin brew",
+			output: "Darwin\narm64\n/bin/zsh\nbrew\nno",
+			expected: RemoteInfo{
+				OS:             "Darwin",
+				Arch:           "arm64",
+				Shell:          "/bin/zsh",
+				PackageManager: "brew",
+			},
+		},
+		{
+			name:   "Darwin full output (legacy 3-line)",
 			output: "Darwin\narm64\n/bin/zsh",
 			expected: RemoteInfo{
 				OS:    "Darwin",
@@ -77,12 +117,14 @@ func TestParseDetectionOutput(t *testing.T) {
 			},
 		},
 		{
-			name:   "extra lines ignored",
-			output: "Linux\nx86_64\n/bin/bash\nextra line\n",
+			name:   "extra lines beyond sudo-n are ignored",
+			output: "Linux\nx86_64\n/bin/bash\napt\nyes\nextra\nmore extra",
 			expected: RemoteInfo{
-				OS:    "Linux",
-				Arch:  "x86_64",
-				Shell: "/bin/bash",
+				OS:                 "Linux",
+				Arch:               "x86_64",
+				Shell:              "/bin/bash",
+				PackageManager:     "apt",
+				SudoNoninteractive: true,
 			},
 		},
 	}

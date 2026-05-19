@@ -70,9 +70,17 @@ func NewTerminalPool(maxTerminals int) *TerminalPool {
 	}
 }
 
+// exitWrapCommand defines a POSIX shell function that overrides `exit` so the
+// agent cannot accidentally terminate the persistent shell. Subshells (sudo,
+// python, ssh-into-another-host) are unaffected; only the top-level shell
+// rebinds `exit`.
+const exitWrapCommand = "exit() { echo '[ssh-mcp: exit blocked; use ssh_close_terminal to terminate]'; }\n"
+
 // Open allocates a PTY, starts an interactive shell, and returns a TerminalSession.
 // cols and rows default to 120×50; termType defaults to "xterm-256color".
-func (tp *TerminalPool) Open(sessionID SessionID, client *ssh.Client, cols, rows int, termType string) (*TerminalSession, error) {
+// When protectExit is true, a POSIX exit-wrapping shell function is injected after
+// shell start to prevent accidental session termination via `exit`.
+func (tp *TerminalPool) Open(sessionID SessionID, client *ssh.Client, cols, rows int, termType string, protectExit bool) (*TerminalSession, error) {
 	if cols <= 0 {
 		cols = 120
 	}
@@ -157,6 +165,13 @@ func (tp *TerminalPool) Open(sessionID SessionID, client *ssh.Client, cols, rows
 		ts.wg.Wait()
 		ts.signalDone()
 	}()
+
+	// Inject exit-wrap function before any user input. The shell buffers our
+	// bytes until it's ready to read; the function definition runs once at
+	// startup and produces no output unless the user later types `exit`.
+	if protectExit {
+		_, _ = stdin.Write([]byte(exitWrapCommand))
+	}
 
 	return ts, nil
 }
@@ -338,6 +353,20 @@ func (ts *TerminalSession) ReadNewSince(minLen int, waitDuration time.Duration) 
 // ReadNew returns all output produced since the last call to ReadNew.
 // If waitDuration > 0, it waits up to that duration for at least some new data.
 func (ts *TerminalSession) ReadNew(waitDuration time.Duration) string {
+	data, _, _ := ts.ReadNewLimited(waitDuration, 0)
+	return data
+}
+
+// ReadNewLimited returns up to lineLimit complete lines of new output.
+// If lineLimit <= 0, behaves like ReadNew and returns all available new data.
+// If the buffered new output contains fewer complete lines (terminated by '\n')
+// than lineLimit, everything is returned including any trailing partial line.
+// Otherwise the first lineLimit complete lines are returned, readPos advances
+// only by those bytes, and hasMore is true.
+//
+// Returns (data, linesReturned, hasMore). linesReturned counts the newlines in
+// data; a trailing partial line (no '\n') is not counted.
+func (ts *TerminalSession) ReadNewLimited(waitDuration time.Duration, lineLimit int) (string, int, bool) {
 	ts.mu.Lock()
 	ts.lastUsed = time.Now()
 	ts.mu.Unlock()
@@ -383,12 +412,56 @@ func (ts *TerminalSession) ReadNew(waitDuration time.Duration) string {
 	defer ts.outputMu.Unlock()
 
 	if ts.readPos >= len(ts.outputBuf) {
-		return ""
+		return "", 0, false
 	}
-	data := string(ts.outputBuf[ts.readPos:])
-	ts.readPos = len(ts.outputBuf)
+
+	newData := ts.outputBuf[ts.readPos:]
+
+	if lineLimit <= 0 {
+		data := string(newData)
+		ts.readPos = len(ts.outputBuf)
+		ts.compactOutputBuf()
+		return data, countLines(data), false
+	}
+
+	// Find byte offset just past the lineLimit-th newline.
+	cut := 0
+	found := 0
+	for i, b := range newData {
+		if b == '\n' {
+			found++
+			if found == lineLimit {
+				cut = i + 1
+				break
+			}
+		}
+	}
+
+	if found < lineLimit {
+		// Buffer holds fewer complete lines than requested — return everything.
+		data := string(newData)
+		ts.readPos = len(ts.outputBuf)
+		ts.compactOutputBuf()
+		return data, found, false
+	}
+
+	data := string(newData[:cut])
+	ts.readPos += cut
+	hasMore := ts.readPos < len(ts.outputBuf)
 	ts.compactOutputBuf()
-	return data
+	return data, found, hasMore
+}
+
+// countLines counts terminating '\n' bytes in s. A trailing partial line
+// (data without final newline) does not count.
+func countLines(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			n++
+		}
+	}
+	return n
 }
 
 // TerminalInfo provides read-only metadata about an active terminal session.

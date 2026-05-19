@@ -43,7 +43,9 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **Remote path expansion** — `~` and relative paths expanded via `sftp.RealPath()` server-side
 - **Text output** — handlers return human-readable text via `textResult()` instead of JSON for better UX
 - **Efficient directory traversal** — uses `sftp.Walk()` for optimal performance
-- **Remote OS detection** — auto-detects OS, architecture, and shell on connect via POSIX probe with Windows fallback; best-effort with 5s timeout; results stored on `Connection` and exposed in `ssh_connect`/`ssh_list_sessions` output
+- **Remote OS detection** — auto-detects OS, architecture, shell, package manager (`apt`/`dnf`/`yum`/`apk`/`pacman`/`brew`), and passwordless-sudo (`sudo -n true`) on connect via 5-line POSIX probe with Windows fallback; best-effort with 5s timeout; results stored on `Connection` and exposed in `ssh_connect`/`ssh_list_sessions` output (`package_manager`, `sudo_noninteractive` fields)
+- **Terminal exit-wrap** — `ssh_open_terminal` overrides the shell's `exit` builtin with a no-op function so an agent accidentally typing `exit` cannot kill the persistent session; use `ssh_close_terminal` to terminate. Opt-out via `protect_exit: false`; auto-disabled when remote OS is Windows. Subshells (sudo, python, ssh) are unaffected.
+- **Terminal output pagination** — `ssh_read_output` accepts an optional `limit` (max complete lines per call); remaining lines stay buffered for subsequent calls. Response includes `lines`, `has_more`, and Text() appends a marker line when more data is buffered.
 - **Terminal pool limit** — `--max-terminals` caps concurrent PTY sessions; enforced with pool lock before SSH session creation
 - **Terminal done channel** — `done` channel closed via `sync.Once` (`signalDone`) when read goroutines exit; unblocks `ReadNew`/`ReadNewSince` immediately on close
 - **Terminal buffer compaction** — output buffer compacted (copied to index 0) when `readPos` exceeds 1 MB to reclaim memory

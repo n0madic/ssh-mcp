@@ -40,3 +40,34 @@ func TestSSHReadFileOutput_TextWithContent(t *testing.T) {
 		t.Errorf("Text() = %q, want %q", out.Text(), expected)
 	}
 }
+
+func TestSSHReadOutputOutput_TextNoMore(t *testing.T) {
+	out := SSHReadOutputOutput{Output: "hello\n", HasNew: true, Lines: 1}
+	if out.Text() != "hello\n" {
+		t.Errorf("Text() = %q, want %q", out.Text(), "hello\n")
+	}
+}
+
+func TestSSHReadOutputOutput_TextHasMoreEmpty(t *testing.T) {
+	out := SSHReadOutputOutput{HasMore: true}
+	expected := "[ssh-mcp: more output buffered; call ssh_read_output again]"
+	if out.Text() != expected {
+		t.Errorf("Text() = %q, want %q", out.Text(), expected)
+	}
+}
+
+func TestSSHReadOutputOutput_TextHasMoreAppendsMarker(t *testing.T) {
+	out := SSHReadOutputOutput{Output: "one\ntwo\n", HasMore: true, Lines: 2, HasNew: true}
+	expected := "one\ntwo\n[ssh-mcp: more output buffered; call ssh_read_output again]"
+	if out.Text() != expected {
+		t.Errorf("Text() = %q, want %q", out.Text(), expected)
+	}
+}
+
+func TestSSHReadOutputOutput_TextHasMoreInsertsNewline(t *testing.T) {
+	out := SSHReadOutputOutput{Output: "partial", HasMore: true, HasNew: true}
+	expected := "partial\n[ssh-mcp: more output buffered; call ssh_read_output again]"
+	if out.Text() != expected {
+		t.Errorf("Text() = %q, want %q", out.Text(), expected)
+	}
+}

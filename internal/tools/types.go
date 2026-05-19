@@ -16,14 +16,16 @@ type SSHConnectInput struct {
 
 // SSHConnectOutput is the output for the ssh_connect tool.
 type SSHConnectOutput struct {
-	SessionID string `json:"session_id"`
-	Host      string `json:"host"`
-	Port      int    `json:"port"`
-	User      string `json:"user"`
-	Message   string `json:"message"`
-	OS        string `json:"os,omitempty"`
-	Arch      string `json:"arch,omitempty"`
-	Shell     string `json:"shell,omitempty"`
+	SessionID          string `json:"session_id"`
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	User               string `json:"user"`
+	Message            string `json:"message"`
+	OS                 string `json:"os,omitempty"`
+	Arch               string `json:"arch,omitempty"`
+	Shell              string `json:"shell,omitempty"`
+	PackageManager     string `json:"package_manager,omitempty"`
+	SudoNoninteractive bool   `json:"sudo_noninteractive,omitempty"`
 }
 
 // Text returns a human-readable representation of the connect result.
@@ -97,19 +99,21 @@ type SSHListSessionsOutput struct {
 
 // SessionInfo provides information about an active session.
 type SessionInfo struct {
-	SessionID    string               `json:"session_id"`
-	Host         string               `json:"host"`
-	Port         int                  `json:"port"`
-	User         string               `json:"user"`
-	ConnectedAt  string               `json:"connected_at"`
-	LastUsed     string               `json:"last_used"`
-	CommandCount int                  `json:"command_count"`
-	Connected    bool                 `json:"connected"`
-	OS           string               `json:"os,omitempty"`
-	Arch         string               `json:"arch,omitempty"`
-	Shell        string               `json:"shell,omitempty"`
-	Terminals    []TerminalInfoOutput `json:"terminals,omitempty"`
-	Tunnels      []TunnelInfoOutput   `json:"tunnels,omitempty"`
+	SessionID          string               `json:"session_id"`
+	Host               string               `json:"host"`
+	Port               int                  `json:"port"`
+	User               string               `json:"user"`
+	ConnectedAt        string               `json:"connected_at"`
+	LastUsed           string               `json:"last_used"`
+	CommandCount       int                  `json:"command_count"`
+	Connected          bool                 `json:"connected"`
+	OS                 string               `json:"os,omitempty"`
+	Arch               string               `json:"arch,omitempty"`
+	Shell              string               `json:"shell,omitempty"`
+	PackageManager     string               `json:"package_manager,omitempty"`
+	SudoNoninteractive bool                 `json:"sudo_noninteractive,omitempty"`
+	Terminals          []TerminalInfoOutput `json:"terminals,omitempty"`
+	Tunnels            []TunnelInfoOutput   `json:"tunnels,omitempty"`
 }
 
 // Text returns a human-readable representation of the sessions list.
@@ -132,6 +136,12 @@ func (o SSHListSessionsOutput) Text() string {
 			}
 			if s.Shell != "" {
 				detail += ", " + s.Shell
+			}
+			if s.PackageManager != "" {
+				detail += ", pkg=" + s.PackageManager
+			}
+			if s.SudoNoninteractive {
+				detail += ", sudo-n"
 			}
 			line += fmt.Sprintf(" [%s]", detail)
 		}
@@ -235,11 +245,12 @@ func (o SSHReadFileOutput) Text() string {
 
 // SSHOpenTerminalInput is the input for the ssh_open_terminal tool.
 type SSHOpenTerminalInput struct {
-	SessionID string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
-	Cols      int    `json:"cols,omitempty" jsonschema:"Terminal width in columns (default 120)"`
-	Rows      int    `json:"rows,omitempty" jsonschema:"Terminal height in rows (default 50)"`
-	TermType  string `json:"term_type,omitempty" jsonschema:"Terminal type (default xterm-256color)"`
-	WaitMs    int    `json:"wait_ms,omitempty" jsonschema:"Milliseconds to wait for initial output (default 500)"`
+	SessionID   string `json:"session_id" jsonschema:"Session ID from ssh_connect"`
+	Cols        int    `json:"cols,omitempty" jsonschema:"Terminal width in columns (default 120)"`
+	Rows        int    `json:"rows,omitempty" jsonschema:"Terminal height in rows (default 50)"`
+	TermType    string `json:"term_type,omitempty" jsonschema:"Terminal type (default xterm-256color)"`
+	WaitMs      int    `json:"wait_ms,omitempty" jsonschema:"Milliseconds to wait for initial output (default 500)"`
+	ProtectExit *bool  `json:"protect_exit,omitempty" jsonschema:"Override the 'exit' command with a no-op shell function so an accidental exit does not kill the session (default true). Use ssh_close_terminal to terminate. Automatically disabled for Windows hosts."`
 }
 
 // SSHOpenTerminalOutput is the output for the ssh_open_terminal tool.
@@ -283,17 +294,33 @@ func (o SSHSendInputOutput) Text() string {
 type SSHReadOutputInput struct {
 	TerminalID string `json:"terminal_id" jsonschema:"Terminal ID from ssh_open_terminal"`
 	WaitMs     int    `json:"wait_ms,omitempty" jsonschema:"Max milliseconds to wait for new output (default 0 = return immediately)"`
+	Limit      int    `json:"limit,omitempty" jsonschema:"Maximum number of complete lines to return per call (default 0 = return all available new data). Use this for token-efficient paging through long output; remaining lines stay buffered until the next call."`
 }
 
 // SSHReadOutputOutput is the output for the ssh_read_output tool.
 type SSHReadOutputOutput struct {
-	Output string `json:"output"`
-	HasNew bool   `json:"has_new"`
+	Output  string `json:"output"`
+	HasNew  bool   `json:"has_new"`
+	Lines   int    `json:"lines,omitempty"`
+	HasMore bool   `json:"has_more,omitempty"`
 }
 
 // Text returns a human-readable representation of the read output result.
+// When the response is line-limited and more data remains buffered, a marker
+// line is appended so the agent can spot the pagination boundary without
+// parsing the JSON envelope.
 func (o SSHReadOutputOutput) Text() string {
-	return o.Output
+	if !o.HasMore {
+		return o.Output
+	}
+	if o.Output == "" {
+		return "[ssh-mcp: more output buffered; call ssh_read_output again]"
+	}
+	sep := ""
+	if !strings.HasSuffix(o.Output, "\n") {
+		sep = "\n"
+	}
+	return o.Output + sep + "[ssh-mcp: more output buffered; call ssh_read_output again]"
 }
 
 // TerminalInfoOutput provides information about an active terminal session.

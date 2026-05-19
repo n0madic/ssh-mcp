@@ -353,11 +353,14 @@ Open a PTY terminal session. Requires `--enable-terminal` flag on the server.
   "cols": 120,
   "rows": 50,
   "term_type": "xterm-256color",
-  "wait_ms": 500
+  "wait_ms": 500,
+  "protect_exit": true
 }
 ```
 
-Returns `terminal_id` and the initial shell output (prompt). `cols`/`rows`/`term_type`/`wait_ms` are optional.
+Returns `terminal_id` and the initial shell output (prompt). `cols`/`rows`/`term_type`/`wait_ms`/`protect_exit` are optional.
+
+`protect_exit` (default true) overrides the shell's `exit` command with a no-op function so an accidental `exit` from the agent cannot kill the session. Use `ssh_close_terminal` to terminate the session explicitly. Subshells (sudo, python, ssh into another host) are unaffected. Automatically disabled for Windows hosts.
 
 ### ssh_send_input
 
@@ -391,11 +394,13 @@ Read buffered output since the last read without writing anything.
 ```json
 {
   "terminal_id": "term-1",
-  "wait_ms": 1000
+  "wait_ms": 1000,
+  "limit": 100
 }
 ```
 
-Set `wait_ms` to wait up to N milliseconds for new data (default 0 = return immediately).
+- `wait_ms` — wait up to N milliseconds for new data (default 0 = return immediately).
+- `limit` — maximum number of complete lines to return per call (default 0 = return everything). Remaining lines stay in the buffer for subsequent calls. Response includes `lines` (count returned) and `has_more` (true if more lines are buffered); the text response also appends a marker line when more output is pending.
 
 ### ssh_close_terminal
 

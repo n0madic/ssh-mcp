@@ -26,17 +26,19 @@ func HandleListSessions(_ context.Context, deps *SessionsDeps, _ SSHListSessions
 	sessions := make([]SessionInfo, len(conns))
 	for i, c := range conns {
 		sessions[i] = SessionInfo{
-			SessionID:    string(c.SessionID),
-			Host:         c.Host,
-			Port:         c.Port,
-			User:         c.User,
-			ConnectedAt:  c.ConnectedAt.Format(time.RFC3339),
-			LastUsed:     c.LastUsed.Format(time.RFC3339),
-			CommandCount: c.CommandCount,
-			Connected:    c.Connected,
-			OS:           c.OS,
-			Arch:         c.Arch,
-			Shell:        c.Shell,
+			SessionID:          string(c.SessionID),
+			Host:               c.Host,
+			Port:               c.Port,
+			User:               c.User,
+			ConnectedAt:        c.ConnectedAt.Format(time.RFC3339),
+			LastUsed:           c.LastUsed.Format(time.RFC3339),
+			CommandCount:       c.CommandCount,
+			Connected:          c.Connected,
+			OS:                 c.OS,
+			Arch:               c.Arch,
+			Shell:              c.Shell,
+			PackageManager:     c.PackageManager,
+			SudoNoninteractive: c.SudoNoninteractive,
 		}
 
 		// Include terminal sessions for this connection.

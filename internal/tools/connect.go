@@ -108,17 +108,25 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 		if info.Shell != "" {
 			detail += ", " + info.Shell
 		}
+		if info.PackageManager != "" {
+			detail += ", pkg=" + info.PackageManager
+		}
+		if info.SudoNoninteractive {
+			detail += ", sudo-n"
+		}
 		message += fmt.Sprintf(" (%s)", detail)
 	}
 
 	return &SSHConnectOutput{
-		SessionID: string(sessionID),
-		Host:      params.Host,
-		Port:      params.Port,
-		User:      params.User,
-		Message:   message,
-		OS:        info.OS,
-		Arch:      info.Arch,
-		Shell:     info.Shell,
+		SessionID:          string(sessionID),
+		Host:               params.Host,
+		Port:               params.Port,
+		User:               params.User,
+		Message:            message,
+		OS:                 info.OS,
+		Arch:               info.Arch,
+		Shell:              info.Shell,
+		PackageManager:     info.PackageManager,
+		SudoNoninteractive: info.SudoNoninteractive,
 	}, nil
 }

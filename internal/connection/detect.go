@@ -12,12 +12,20 @@ import (
 
 // RemoteInfo holds detected information about the remote host.
 type RemoteInfo struct {
-	OS    string // "Linux", "Darwin", "FreeBSD", "Windows"
-	Arch  string // "x86_64", "aarch64", "arm64", "AMD64"
-	Shell string // "/bin/bash", "/bin/zsh", "C:\Windows\system32\cmd.exe"
+	OS                 string // "Linux", "Darwin", "FreeBSD", "Windows"
+	Arch               string // "x86_64", "aarch64", "arm64", "AMD64"
+	Shell              string // "/bin/bash", "/bin/zsh", "C:\Windows\system32\cmd.exe"
+	PackageManager     string // "apt", "dnf", "yum", "apk", "pacman", "brew", or ""
+	SudoNoninteractive bool   // true if `sudo -n true` succeeds (passwordless sudo available)
 }
 
 const detectTimeout = 5 * time.Second
+
+// posixProbeCommand collects OS, arch, shell, package manager, and sudo-noninteractive
+// status on POSIX hosts. Always produces 5 lines; lines 4 and 5 may be empty / "no".
+const posixProbeCommand = `uname -s; uname -m; echo "$SHELL"; ` +
+	`pm=""; for c in apt dnf yum apk pacman brew; do command -v "$c" >/dev/null 2>&1 && { pm="$c"; break; }; done; echo "$pm"; ` +
+	`if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then echo yes; else echo no; fi`
 
 // detectRemoteInfo runs lightweight probe commands to detect the remote OS,
 // architecture, and shell. Best-effort: failures are logged but never block
@@ -27,7 +35,7 @@ func detectRemoteInfo(ctx context.Context, client *ssh.Client) RemoteInfo {
 	defer cancel()
 
 	// Try POSIX probe first (Linux/macOS/FreeBSD).
-	output, posixErr := runProbeCommand(ctx, client, "uname -s; uname -m; echo $SHELL")
+	output, posixErr := runProbeCommand(ctx, client, posixProbeCommand)
 	if posixErr == nil {
 		info := parseDetectionOutput(output)
 		if info.OS != "" {
@@ -79,7 +87,9 @@ func runProbeCommand(ctx context.Context, client *ssh.Client, command string) (s
 	}
 }
 
-// parseDetectionOutput parses POSIX probe output (uname -s; uname -m; echo $SHELL).
+// parseDetectionOutput parses POSIX probe output (5 lines: OS, arch, shell,
+// package manager, sudo-n). Earlier 3-line outputs remain compatible: trailing
+// fields stay empty / false.
 func parseDetectionOutput(output string) RemoteInfo {
 	lines := strings.Split(output, "\n")
 	var info RemoteInfo
@@ -92,6 +102,12 @@ func parseDetectionOutput(output string) RemoteInfo {
 	}
 	if len(lines) >= 3 {
 		info.Shell = strings.TrimSpace(lines[2])
+	}
+	if len(lines) >= 4 {
+		info.PackageManager = strings.TrimSpace(lines[3])
+	}
+	if len(lines) >= 5 {
+		info.SudoNoninteractive = strings.TrimSpace(lines[4]) == "yes"
 	}
 
 	return info

@@ -17,17 +17,19 @@ type SessionID string
 
 // ConnectionInfo provides metadata about a connection.
 type ConnectionInfo struct {
-	SessionID    SessionID `json:"session_id"`
-	Host         string    `json:"host"`
-	Port         int       `json:"port"`
-	User         string    `json:"user"`
-	ConnectedAt  time.Time `json:"connected_at"`
-	LastUsed     time.Time `json:"last_used"`
-	CommandCount int       `json:"command_count"`
-	Connected    bool      `json:"connected"`
-	OS           string    `json:"os,omitempty"`
-	Arch         string    `json:"arch,omitempty"`
-	Shell        string    `json:"shell,omitempty"`
+	SessionID          SessionID `json:"session_id"`
+	Host               string    `json:"host"`
+	Port               int       `json:"port"`
+	User               string    `json:"user"`
+	ConnectedAt        time.Time `json:"connected_at"`
+	LastUsed           time.Time `json:"last_used"`
+	CommandCount       int       `json:"command_count"`
+	Connected          bool      `json:"connected"`
+	OS                 string    `json:"os,omitempty"`
+	Arch               string    `json:"arch,omitempty"`
+	Shell              string    `json:"shell,omitempty"`
+	PackageManager     string    `json:"package_manager,omitempty"`
+	SudoNoninteractive bool      `json:"sudo_noninteractive,omitempty"`
 }
 
 // Connection wraps an SSH client with metadata.
@@ -413,17 +415,19 @@ func (p *Pool) ListConnections() []ConnectionInfo {
 			// Ready — read actual state.
 			conn.mu.RLock()
 			infos = append(infos, ConnectionInfo{
-				SessionID:    conn.ID,
-				Host:         conn.Host,
-				Port:         conn.Port,
-				User:         conn.User,
-				ConnectedAt:  conn.ConnectedAt,
-				LastUsed:     conn.LastUsed,
-				CommandCount: conn.CommandCount,
-				Connected:    conn.Connected,
-				OS:           conn.RemoteInfo.OS,
-				Arch:         conn.RemoteInfo.Arch,
-				Shell:        conn.RemoteInfo.Shell,
+				SessionID:          conn.ID,
+				Host:               conn.Host,
+				Port:               conn.Port,
+				User:               conn.User,
+				ConnectedAt:        conn.ConnectedAt,
+				LastUsed:           conn.LastUsed,
+				CommandCount:       conn.CommandCount,
+				Connected:          conn.Connected,
+				OS:                 conn.RemoteInfo.OS,
+				Arch:               conn.RemoteInfo.Arch,
+				Shell:              conn.RemoteInfo.Shell,
+				PackageManager:     conn.RemoteInfo.PackageManager,
+				SudoNoninteractive: conn.RemoteInfo.SudoNoninteractive,
 			})
 			conn.mu.RUnlock()
 		default:

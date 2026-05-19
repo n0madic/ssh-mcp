@@ -205,6 +205,103 @@ func TestTerminalPoolCloseAll(t *testing.T) {
 	}
 }
 
+// TestTerminalSessionReadNewLimitedNoLimit verifies that ReadNewLimited with
+// lineLimit <= 0 returns all available new data and reports has_more=false.
+func TestTerminalSessionReadNewLimitedNoLimit(t *testing.T) {
+	ts := &TerminalSession{
+		outputNew: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+
+	ts.outputMu.Lock()
+	ts.outputBuf = append(ts.outputBuf, []byte("alpha\nbeta\ngamma\n")...)
+	ts.outputMu.Unlock()
+
+	data, lines, hasMore := ts.ReadNewLimited(0, 0)
+	if data != "alpha\nbeta\ngamma\n" {
+		t.Errorf("data = %q, want %q", data, "alpha\nbeta\ngamma\n")
+	}
+	if lines != 3 {
+		t.Errorf("lines = %d, want 3", lines)
+	}
+	if hasMore {
+		t.Error("hasMore should be false when returning everything")
+	}
+}
+
+// TestTerminalSessionReadNewLimitedCuts verifies that ReadNewLimited returns
+// exactly lineLimit complete lines and leaves the rest in the buffer.
+func TestTerminalSessionReadNewLimitedCuts(t *testing.T) {
+	ts := &TerminalSession{
+		outputNew: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+
+	ts.outputMu.Lock()
+	ts.outputBuf = append(ts.outputBuf, []byte("one\ntwo\nthree\nfour\n")...)
+	ts.outputMu.Unlock()
+
+	data, lines, hasMore := ts.ReadNewLimited(0, 2)
+	if data != "one\ntwo\n" {
+		t.Errorf("first call data = %q, want %q", data, "one\ntwo\n")
+	}
+	if lines != 2 {
+		t.Errorf("first call lines = %d, want 2", lines)
+	}
+	if !hasMore {
+		t.Error("hasMore should be true when buffer has more lines")
+	}
+
+	data, lines, hasMore = ts.ReadNewLimited(0, 2)
+	if data != "three\nfour\n" {
+		t.Errorf("second call data = %q, want %q", data, "three\nfour\n")
+	}
+	if lines != 2 {
+		t.Errorf("second call lines = %d, want 2", lines)
+	}
+	if hasMore {
+		t.Error("hasMore should be false after consuming everything")
+	}
+}
+
+// TestTerminalSessionReadNewLimitedPartialTrailingLine verifies that when the
+// new data ends without a final '\n' the trailing partial line is returned as
+// part of the result if fewer complete lines than requested exist.
+func TestTerminalSessionReadNewLimitedPartialTrailingLine(t *testing.T) {
+	ts := &TerminalSession{
+		outputNew: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+
+	ts.outputMu.Lock()
+	ts.outputBuf = append(ts.outputBuf, []byte("one\ntwo\n$ ")...)
+	ts.outputMu.Unlock()
+
+	data, lines, hasMore := ts.ReadNewLimited(0, 10)
+	if data != "one\ntwo\n$ " {
+		t.Errorf("data = %q, want %q", data, "one\ntwo\n$ ")
+	}
+	if lines != 2 {
+		t.Errorf("lines = %d, want 2 (partial trailing not counted)", lines)
+	}
+	if hasMore {
+		t.Error("hasMore should be false when everything was returned")
+	}
+}
+
+// TestTerminalSessionReadNewLimitedEmpty verifies behavior when nothing is buffered.
+func TestTerminalSessionReadNewLimitedEmpty(t *testing.T) {
+	ts := &TerminalSession{
+		outputNew: make(chan struct{}),
+		done:      make(chan struct{}),
+	}
+
+	data, lines, hasMore := ts.ReadNewLimited(0, 5)
+	if data != "" || lines != 0 || hasMore {
+		t.Errorf("empty buffer: got (%q, %d, %v), want (\"\", 0, false)", data, lines, hasMore)
+	}
+}
+
 // TestTerminalSessionReadNewDoneUnblocks verifies that closing the done channel
 // immediately unblocks a ReadNew call with a long wait duration.
 func TestTerminalSessionReadNewDoneUnblocks(t *testing.T) {

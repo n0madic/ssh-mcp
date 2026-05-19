@@ -74,7 +74,16 @@ func HandleOpenTerminal(ctx context.Context, deps *TerminalDeps, input SSHOpenTe
 		waitMs = 500
 	}
 
-	ts, err := deps.TermPool.Open(connection.SessionID(input.SessionID), client, cols, rows, input.TermType)
+	// Default protect_exit to true; opt out via explicit false or for Windows hosts.
+	protectExit := true
+	if input.ProtectExit != nil {
+		protectExit = *input.ProtectExit
+	}
+	if conn.GetRemoteInfo().OS == "Windows" {
+		protectExit = false
+	}
+
+	ts, err := deps.TermPool.Open(connection.SessionID(input.SessionID), client, cols, rows, input.TermType, protectExit)
 	if err != nil {
 		return nil, fmt.Errorf("open terminal: %w", err)
 	}
@@ -150,6 +159,8 @@ func HandleSendInput(ctx context.Context, deps *TerminalDeps, input SSHSendInput
 }
 
 // HandleReadOutput reads buffered output from a terminal since the last read.
+// When input.Limit > 0, output is capped at that many complete lines and any
+// remaining lines stay in the buffer for the next call (paginated reads).
 func HandleReadOutput(ctx context.Context, deps *TerminalDeps, input SSHReadOutputInput) (*SSHReadOutputOutput, error) {
 	if input.TerminalID == "" {
 		return nil, fmt.Errorf("terminal_id is required")
@@ -161,11 +172,14 @@ func HandleReadOutput(ctx context.Context, deps *TerminalDeps, input SSHReadOutp
 	}
 
 	wait := time.Duration(input.WaitMs) * time.Millisecond
-	output := TruncateOutput(ts.ReadNew(wait), deps.MaxOutputSize)
+	raw, lines, hasMore := ts.ReadNewLimited(wait, input.Limit)
+	output := TruncateOutput(raw, deps.MaxOutputSize)
 
 	return &SSHReadOutputOutput{
-		Output: output,
-		HasNew: output != "",
+		Output:  output,
+		HasNew:  output != "",
+		Lines:   lines,
+		HasMore: hasMore,
 	}, nil
 }
 
