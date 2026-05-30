@@ -474,6 +474,60 @@ Close an active tunnel.
 
 ---
 
+## Codex Configuration
+
+Add to Codex using the CLI:
+
+```bash
+codex mcp add ssh \
+  --env SSH_AUTH_SOCK="$SSH_AUTH_SOCK" \
+  -- /path/to/ssh-mcp --enable-terminal
+```
+
+Verify the saved configuration:
+
+```bash
+codex mcp get ssh
+```
+
+For passphrase-protected SSH keys, `ssh-mcp` must be able to use your
+ssh-agent. It does not prompt for private-key passphrases itself. If Codex starts
+`ssh-mcp` without a working `SSH_AUTH_SOCK`, `ssh_connect` can fail before any
+network connection attempt with:
+
+```text
+connect failed: auth config: no authentication methods available
+```
+
+Before adding the MCP server, make sure the key is loaded:
+
+```bash
+ssh-add -l
+```
+
+On macOS, load the key into the agent and store the passphrase in Keychain:
+
+```bash
+/usr/bin/ssh-add --apple-use-keychain ~/.ssh/id_rsa
+```
+
+If `SSH_AUTH_SOCK` changes after reboot or after restarting your terminal, update
+the Codex MCP entry by running `codex mcp add` again with the current value.
+Existing Codex sessions may keep an already-started `ssh-mcp` process with the
+old environment; restart Codex or remove the stale `ssh-mcp` process after
+changing the config.
+
+Manual equivalent in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.ssh]
+command = "/path/to/ssh-mcp"
+args = ["--enable-terminal"]
+
+[mcp_servers.ssh.env]
+SSH_AUTH_SOCK = "/var/run/com.apple.launchd.XYZ/Listeners"
+```
+
 ## Claude Code Configuration
 
 Add to Claude Code using the CLI:
