@@ -18,6 +18,30 @@ type ConnectDeps struct {
 	RateLimiter *security.RateLimiter
 }
 
+// connectMessage formats the ssh_connect result message. The session ID is
+// stated explicitly so agents pass the exact string (including port) to
+// subsequent ssh_* tools instead of guessing it from the host they provided.
+func connectMessage(sessionID string, info connection.RemoteInfo) string {
+	message := fmt.Sprintf("Connected, session_id: %s", sessionID)
+	if info.OS != "" {
+		detail := info.OS
+		if info.Arch != "" {
+			detail += " " + info.Arch
+		}
+		if info.Shell != "" {
+			detail += ", " + info.Shell
+		}
+		if info.PackageManager != "" {
+			detail += ", pkg=" + info.PackageManager
+		}
+		if info.SudoNoninteractive {
+			detail += ", sudo-n"
+		}
+		message += fmt.Sprintf(" (%s)", detail)
+	}
+	return message
+}
+
 // HandleConnect implements the ssh_connect tool.
 func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput) (*SSHConnectOutput, error) {
 	// Parse host string (supports user:password@host:port format).
@@ -94,28 +118,12 @@ func HandleConnect(ctx context.Context, deps *ConnectDeps, input SSHConnectInput
 			Host:      params.Host,
 			Port:      params.Port,
 			User:      params.User,
-			Message:   fmt.Sprintf("Connected to %s@%s:%d", params.User, params.Host, params.Port),
+			Message:   connectMessage(string(sessionID), connection.RemoteInfo{}),
 		}, nil
 	}
 
 	info := conn.GetRemoteInfo()
-	message := fmt.Sprintf("Connected to %s@%s:%d", params.User, params.Host, params.Port)
-	if info.OS != "" {
-		detail := info.OS
-		if info.Arch != "" {
-			detail += " " + info.Arch
-		}
-		if info.Shell != "" {
-			detail += ", " + info.Shell
-		}
-		if info.PackageManager != "" {
-			detail += ", pkg=" + info.PackageManager
-		}
-		if info.SudoNoninteractive {
-			detail += ", sudo-n"
-		}
-		message += fmt.Sprintf(" (%s)", detail)
-	}
+	message := connectMessage(string(sessionID), info)
 
 	return &SSHConnectOutput{
 		SessionID:          string(sessionID),

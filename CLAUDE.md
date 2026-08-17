@@ -50,6 +50,7 @@ SSH MCP Server provides 15 tools to AI agents via the Model Context Protocol:
 - **Terminal done channel** — `done` channel closed via `sync.Once` (`signalDone`) when read goroutines exit; unblocks `ReadNew`/`ReadNewSince` immediately on close
 - **Terminal buffer compaction** — output buffer compacted (copied to index 0) when `readPos` exceeds 1 MB to reclaim memory
 - **Terminal buffer cap** — hard limit of 10 MB (`maxBufferSize`) on output buffer; oldest data discarded when exceeded to prevent unbounded memory growth
+- **Explicit session_id in connect output** — `ssh_connect` message states the session ID verbatim (`Connected, session_id: user@host:port (...)`) so agents pass the exact string (including port) instead of guessing; "session not found" errors list active session IDs (or suggest `ssh_connect`) for self-correction
 - **SSH config auto-discovery** — `~/.ssh/config` aliases are resolved automatically on connect, no flag needed; explicit parameters override config values
 - **Graceful timeout** — `ssh_execute` sends SIGTERM first, waits 5s grace period, then SIGKILL; returns partial stdout/stderr as result (not error) with `[TIMEOUT]` marker
 - **File read with pagination** — `ssh_read_file` supports line offset/limit for token-efficient reading; formats output with `cat -n` style line numbers
@@ -176,7 +177,8 @@ for walker.Step() {
 Unit tests are in `*_test.go` files alongside source:
 - `config_test.go` — config building, validation, defaults, CLI parsing, new security flags
 - `auth_test.go` — host parsing, auth method discovery, ssh-agent auth (no socket, invalid socket), missing known_hosts error
-- `pool_test.go` — pool operations, session management
+- `pool_test.go` — pool operations, session management, "not found" error hints (active session list)
+- `connect_test.go` (tools) — connect message formatting (explicit session_id, remote info details)
 - `detect_test.go` — remote OS/shell detection parsing (POSIX and Windows), concurrency safety
 - `filter_test.go` — host/command allow/deny with regex, CIDR matching, auto-anchoring, partial match prevention
 - `ratelimit_test.go` — per-host rate limiting, burst, cleanup

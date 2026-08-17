@@ -41,6 +41,37 @@ func TestPool_Disconnect_NotFound(t *testing.T) {
 	}
 }
 
+func TestPool_NotFound_HintsNoActiveSessions(t *testing.T) {
+	pool := newTestPool()
+
+	_, err := pool.GetConnection(context.Background(), SessionID("user@host"))
+	if err == nil {
+		t.Fatal("expected error for non-existent session")
+	}
+	if !strings.Contains(err.Error(), "no active sessions") {
+		t.Errorf("error should hint that there are no active sessions, got: %v", err)
+	}
+}
+
+func TestPool_NotFound_ListsActiveSessions(t *testing.T) {
+	pool := newTestPool()
+	pool.conns[SessionID("user@host:22")] = &Connection{ready: make(chan struct{})}
+
+	_, err := pool.GetConnection(context.Background(), SessionID("user@host"))
+	if err == nil {
+		t.Fatal("expected error for non-existent session")
+	}
+	if !strings.Contains(err.Error(), "active sessions: user@host:22") {
+		t.Errorf("error should list active session IDs, got: %v", err)
+	}
+
+	if derr := pool.Disconnect(SessionID("user@host")); derr == nil {
+		t.Fatal("expected error for non-existent session on disconnect")
+	} else if !strings.Contains(derr.Error(), "active sessions: user@host:22") {
+		t.Errorf("disconnect error should list active session IDs, got: %v", derr)
+	}
+}
+
 func TestPool_CloseAll_Empty(t *testing.T) {
 	pool := newTestPool()
 

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -291,6 +293,23 @@ func (p *Pool) Connect(ctx context.Context, params ConnectParams) (SessionID, er
 	return id, nil
 }
 
+// sessionHint returns a suffix for "session not found" errors listing active
+// session IDs, so callers (AI agents) can self-correct a mistyped ID.
+func (p *Pool) sessionHint() string {
+	p.mu.RLock()
+	ids := make([]string, 0, len(p.conns))
+	for id := range p.conns {
+		ids = append(ids, string(id))
+	}
+	p.mu.RUnlock()
+
+	if len(ids) == 0 {
+		return "; no active sessions, use ssh_connect first"
+	}
+	sort.Strings(ids)
+	return "; active sessions: " + strings.Join(ids, ", ")
+}
+
 // GetConnection retrieves a connection by ID, attempting auto-reconnect if dead.
 // If a connection attempt is in progress, it waits for it to complete.
 func (p *Pool) GetConnection(ctx context.Context, id SessionID) (*Connection, error) {
@@ -299,7 +318,7 @@ func (p *Pool) GetConnection(ctx context.Context, id SessionID) (*Connection, er
 	p.mu.RUnlock()
 
 	if !exists {
-		return nil, fmt.Errorf("session %s not found", id)
+		return nil, fmt.Errorf("session %s not found%s", id, p.sessionHint())
 	}
 
 	// Wait for pending connection to complete.
@@ -379,7 +398,7 @@ func (p *Pool) Disconnect(id SessionID) error {
 	conn, exists := p.conns[id]
 	if !exists {
 		p.mu.Unlock()
-		return fmt.Errorf("session %s not found", id)
+		return fmt.Errorf("session %s not found%s", id, p.sessionHint())
 	}
 	delete(p.conns, id)
 	p.mu.Unlock()

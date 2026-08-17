@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -217,6 +218,9 @@ func sshConnect(t *testing.T, env *mcpTestEnv) string {
 	sessionID := fmt.Sprintf("testuser@%s:%d", env.sshHost, env.sshPort)
 	if text == "" {
 		t.Fatal("ssh_connect returned empty text")
+	}
+	if !strings.Contains(text, "session_id: "+sessionID) {
+		t.Fatalf("ssh_connect response must state the session_id explicitly, got: %s", text)
 	}
 	t.Logf("ssh_connect response: %s", text)
 	return sessionID
